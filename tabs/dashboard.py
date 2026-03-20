@@ -255,14 +255,16 @@ def render():
                 font=dict(size=18, color="#f1f5f9"),
             )
             fig_donut.update_layout(**chart_layout(
-                height=320,
+                height=380,
                 showlegend=True,
                 legend=dict(
                     orientation="h",
-                    x=0.5, y=-0.08,
+                    x=0.5, y=-0.15,
                     xanchor="center",
-                    font=dict(size=11, color="#e2e8f0"),
+                    font=dict(size=10, color="#e2e8f0"),
+                    itemwidth=30,
                 ),
+                margin=dict(t=10, b=80),
             ))
             st.plotly_chart(fig_donut, use_container_width=True)
         else:
