@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "Bash(python -m pip --version)",
+      "Bash(venv/Scripts/pip install streamlit yfinance plotly pandas)",
+      "Bash(venv/Scripts/python -c \"import streamlit, yfinance, plotly, pandas, numpy; print\\(''All imports OK''\\)\")",
+      "Bash(venv/Scripts/python -c \":*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(venv/Scripts/python.exe -c \":*)"
+    ]
+  }
+}
