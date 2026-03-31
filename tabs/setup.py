@@ -515,8 +515,8 @@ def render():
                         for j, h in enumerate(holdings):
                             hc1, hc2, hc3, hc4, hc5 = st.columns([2, 1.5, 1.5, 2.5, 0.5])
                             h["ticker"] = hc1.text_input(
-                                "Ticker", h.get("ticker", ""),
-                                key=f"ht_{aid}_{j}_v{v}").upper().strip()
+                                "Ticker", h.get("ticker") or "",
+                                key=f"ht_{aid}_{j}_v{v}").upper().strip() or None
                             h["shares"] = hc2.number_input(
                                 "Shares", 0.0, 1e7, float(h.get("shares", 0)),
                                 step=0.01, format="%.4f", key=f"hs_{aid}_{j}_v{v}")
