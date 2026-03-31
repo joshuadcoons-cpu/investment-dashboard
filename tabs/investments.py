@@ -8,6 +8,7 @@ from utils.calculations import ACCOUNT_LIMITS, calc_monthly_payment
 from utils.styles import (
     BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout,
 )
+from utils.database import add_transaction, get_transactions, delete_transaction
 
 ACCOUNT_COLORS = {
     "401k":      BLUE,
@@ -746,6 +747,126 @@ def render():
                     .map(_color_gain, subset=["Gain ($)", "Gain (%)"])
                 )
                 st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    # ── Tax-Loss Harvesting Alerts ──────────────────────────────────────────
+    st.divider()
+    st.subheader("Tax-Loss Harvesting Opportunities")
+
+    tlh_hits = []
+    for acct in accounts:
+        if acct.get("account_type") != "Brokerage":
+            continue
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if not tk or h.get("avg_cost") is None:
+                continue
+            price = live_prices.get(tk)
+            if not price:
+                continue
+            mkt  = h["shares"] * price
+            cost = h["shares"] * h["avg_cost"]
+            loss = mkt - cost
+            if loss < -100:
+                loss_pct = loss / cost * 100
+                tlh_hits.append((acct["label"], tk, loss, loss_pct))
+
+    if tlh_hits:
+        for label, tk, loss, loss_pct in sorted(tlh_hits, key=lambda x: x[2]):
+            st.warning(
+                f"**{tk}** in *{label}* — unrealized loss "
+                f"**${loss:,.0f}** ({loss_pct:.1f}%) — potential harvest candidate"
+            )
+    else:
+        st.success("No taxable losses > $100 detected in Brokerage accounts.")
+
+    # ── Rebalancing Advisor ─────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Rebalancing Advisor")
+
+    target_alloc = a.get("target_allocation", {})
+    if not target_alloc:
+        st.info("Set target allocations in Setup (target_allocation) to enable rebalancing advice.")
+    elif not all_holdings:
+        st.info("Add holdings with sector data to see rebalancing suggestions.")
+    else:
+        hold_df_rb = pd.DataFrame(all_holdings)
+        total_val_rb = hold_df_rb["value"].sum()
+        current_weights = (
+            hold_df_rb.groupby("sector")["value"].sum() / total_val_rb * 100
+        ).to_dict() if total_val_rb > 0 else {}
+
+        all_sectors_rb = sorted(set(list(target_alloc.keys()) + list(current_weights.keys())))
+        rb_rows = []
+        for sec in all_sectors_rb:
+            cur  = current_weights.get(sec, 0.0)
+            tgt  = float(target_alloc.get(sec, 0.0))
+            diff = cur - tgt
+            rb_rows.append({"Sector": sec, "Current %": cur, "Target %": tgt, "Diff %": diff})
+
+        rb_df = pd.DataFrame(rb_rows)
+
+        def _color_diff(val):
+            if pd.isna(val):
+                return ""
+            abs_v = abs(val)
+            if abs_v <= 3:
+                return f"color: {GREEN}"
+            elif abs_v <= 5:
+                return f"color: {AMBER}"
+            return f"color: {RED}"
+
+        styled_rb = (
+            rb_df.style
+            .format({"Current %": "{:.1f}%", "Target %": "{:.1f}%", "Diff %": "{:+.1f}%"})
+            .map(_color_diff, subset=["Diff %"])
+        )
+        st.dataframe(styled_rb, use_container_width=True, hide_index=True)
+
+        suggestions = [(r["Sector"], r["Diff %"]) for _, r in rb_df.iterrows() if abs(r["Diff %"]) > 3]
+        if suggestions:
+            st.caption("Suggested actions:")
+            for sec, diff in sorted(suggestions, key=lambda x: abs(x[1]), reverse=True):
+                if diff < 0:
+                    st.markdown(f"- Consider **adding to {sec}** (underweight by {abs(diff):.1f}%)")
+                else:
+                    st.markdown(f"- Consider **trimming {sec}** (overweight by {abs(diff):.1f}%)")
+        else:
+            st.success("Portfolio is within 3% of all targets — no trades needed.")
+
+    # ── Transaction Log ─────────────────────────────────────────────────────
+    st.divider()
+    st.subheader("Transaction Log")
+
+    acct_labels = [acct["label"] for acct in accounts]
+    with st.form("txn_form", clear_on_submit=True):
+        fc1, fc2, fc3 = st.columns([2, 2, 2])
+        txn_date   = fc1.date_input("Date", value=date.today())
+        txn_acct   = fc2.selectbox("Account", acct_labels)
+        txn_ticker = fc3.text_input("Ticker").upper().strip()
+        fc4, fc5, fc6, fc7 = st.columns([1, 2, 2, 3])
+        txn_action = fc4.selectbox("Action", ["Buy", "Sell"])
+        txn_shares = fc5.number_input("Shares", min_value=0.0, step=0.0001, format="%.4f")
+        txn_price  = fc6.number_input("Price ($)", min_value=0.0, step=0.01, format="%.2f")
+        txn_notes  = fc7.text_input("Notes (optional)")
+        submitted  = st.form_submit_button("Add Transaction")
+
+    if submitted and txn_ticker and txn_shares > 0 and txn_price > 0:
+        add_transaction(txn_date, txn_acct, txn_ticker, txn_action,
+                        txn_shares, txn_price, txn_notes)
+        st.success(f"Logged: {txn_action} {txn_shares:.4f} {txn_ticker} @ ${txn_price:.2f}")
+        st.rerun()
+
+    txns = get_transactions()
+    if txns:
+        txn_df = pd.DataFrame(txns)
+        txn_df = txn_df.rename(columns={
+            "id": "ID", "date": "Date", "account": "Account", "ticker": "Ticker",
+            "action": "Action", "shares": "Shares", "price": "Price ($)", "notes": "Notes",
+        })
+        st.caption(f"{len(txns)} transaction{'s' if len(txns) != 1 else ''} recorded")
+        st.dataframe(txn_df.drop(columns=["ID"]), use_container_width=True, hide_index=True)
+    else:
+        st.caption("No transactions recorded yet.")
 
     # ── Live Stock / ETF Lookup ─────────────────────────────────────────────
     st.divider()

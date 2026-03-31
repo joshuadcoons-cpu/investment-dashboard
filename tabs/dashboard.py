@@ -441,3 +441,33 @@ def render():
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # MILESTONE TRACKER
+    # ═══════════════════════════════════════════════════════════════════════════
+    milestones = a.get("milestones", [])
+    if milestones:
+        st.markdown("<br>", unsafe_allow_html=True)
+        with st.expander("Milestone Tracker", expanded=True):
+            current_age = a["age"]
+            for ms in sorted(milestones, key=lambda m: m.get("age", 0)):
+                ms_age    = ms.get("age", 0)
+                ms_target = ms.get("target_nw", 0)
+                ms_event  = ms.get("event", "")
+                pct       = min(net_worth / ms_target * 100, 100) if ms_target else 0
+                completed = net_worth >= ms_target
+                future    = ms_age > current_age and not completed
+                bar_color = GREEN if completed else (BLUE if not future else "#475569")
+                label     = f"Age {ms_age} — ${ms_target/1e6:.2f}M" if ms_target >= 1e6 else f"Age {ms_age} — ${ms_target:,.0f}"
+                sub       = f'<span style="color:#64748b;font-size:0.72rem"> · {ms_event}</span>' if ms_event else ""
+                st.markdown(
+                    f'<div style="margin-bottom:0.9rem">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
+                    f'<span style="color:#e2e8f0;font-size:0.82rem;font-weight:600">{label}</span>{sub}'
+                    f'<span style="color:#64748b;font-size:0.75rem">{pct:.0f}% · {_fmt_large(net_worth)} of {_fmt_large(ms_target)}</span>'
+                    f'</div>'
+                    f'<div style="background:#0f172a;border-radius:4px;height:8px;width:100%;overflow:hidden">'
+                    f'<div style="width:{pct:.1f}%;height:100%;background:{bar_color};border-radius:4px;transition:width 0.3s"></div>'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )

@@ -228,3 +228,42 @@ def render():
         ),
         use_container_width=True, hide_index=True,
     )
+
+    # ── Projected Annual Surplus ──────────────────────────────────────────────
+    st.divider()
+    st.subheader("Projected Annual Surplus")
+
+    years = list(range(11))
+    income_growth = a.get("income_growth_pct", 3.0) / 100
+    inflation     = a.get("inflation_pct",     3.0) / 100
+
+    annual_income    = [total_monthly_in * 12 * (1 + income_growth) ** y for y in years]
+    annual_expenses  = [(total_housing + total_debt_pmts + total_variable) * 12 * (1 + inflation) ** y for y in years]
+    annual_investing = [total_investments * 12] * len(years)
+    annual_surplus   = [inc - exp - inv for inc, exp, inv in zip(annual_income, annual_expenses, annual_investing)]
+
+    current_year = date.today().year
+    x_labels     = [str(current_year + y) for y in years]
+    bar_colors   = [GREEN if s >= 0 else RED for s in annual_surplus]
+
+    fig_surplus = go.Figure(go.Bar(
+        x=x_labels,
+        y=annual_surplus,
+        marker_color=bar_colors,
+        text=[f"${s/1000:,.0f}k" for s in annual_surplus],
+        textposition="outside",
+        textfont=dict(size=11, color="white"),
+        hovertemplate="%{x}<br>$%{y:,.0f}<extra></extra>",
+        cliponaxis=False,
+    ))
+    fig_surplus.update_layout(**chart_layout(
+        title="Annual Surplus / Deficit (10-Year Projection)",
+        height=380,
+        yaxis=dict(tickprefix="$", tickformat=",.0f"),
+    ))
+    st.plotly_chart(fig_surplus, use_container_width=True)
+    st.caption(
+        f"Assumes income grows at {a.get('income_growth_pct', 3.0):.1f}% "
+        f"and expenses at {a.get('inflation_pct', 3.0):.1f}% annually. "
+        "Investment contributions are held flat."
+    )

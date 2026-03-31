@@ -94,4 +94,25 @@ DEFAULT_ASSUMPTIONS = {
     "social_security_monthly": 2_000,
     "social_security_start_age": 67,
     "retirement_monthly_expenses": 5_000,  # in today's dollars
+
+    # ── Milestones ───────────────────────────────────────────────────────────
+    "milestones": [
+        {"age": 30, "target_nw": 1_000_000},
+        {"age": 35, "target_nw": 1_450_000},
+        {"age": 55, "target_nw": 4_800_000, "event": "W-2 retirement"},
+        {"age": 65, "target_nw": 9_600_000, "event": "Full retirement"},
+    ],
+
+    # ── Target Sector Allocation (%) ─────────────────────────────────────────
+    "target_allocation": {
+        "US Equity": 35,
+        "Technology": 15,
+        "International": 10,
+        "Emerging Markets": 5,
+        "Commodities": 10,
+        "Crypto": 10,
+        "Financials": 5,
+        "Healthcare": 5,
+        "Other": 5,
+    },
 }

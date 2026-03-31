@@ -148,3 +148,76 @@ def render():
             }),
             use_container_width=True, hide_index=True, height=300,
         )
+
+    # ── Extra Payment Simulator ───────────────────────────────────────────────
+    st.divider()
+    st.subheader("What If: Extra Monthly Payment")
+    extra = st.slider("Extra $/mo toward principal", 0, 5000, 0, step=100)
+
+    if extra > 0:
+        r = a["loan_interest_rate"] / 100 / 12
+        pmt = calc_monthly_payment(
+            a["loan_original_amount"], a["loan_interest_rate"], a["loan_term_years"]
+        )
+        balance = float(a["loan_original_amount"])
+        accel_balances = []
+        months = 0
+        while balance > 0 and months < a["loan_term_years"] * 12:
+            interest = balance * r
+            principal_paid = min(pmt - interest + extra, balance)
+            balance = max(balance - principal_paid, 0)
+            months += 1
+            accel_balances.append(balance)
+
+        orig_months = a["loan_term_years"] * 12
+        months_saved = orig_months - months
+        years_saved = months_saved / 12
+
+        orig_total_interest = status["total_interest_paid"] + status["total_interest_remaining"]
+        accel_total_interest = sum(
+            (a["loan_original_amount"] if i == 0 else accel_balances[i - 1]) *
+            (a["loan_interest_rate"] / 100 / 12)
+            for i in range(months)
+        )
+        interest_saved = orig_total_interest - accel_total_interest
+
+        loan_start = date.fromisoformat(a["loan_start_date"])
+        new_payoff = date(
+            loan_start.year + (loan_start.month - 1 + months) // 12,
+            (loan_start.month - 1 + months) % 12 + 1,
+            1,
+        )
+
+        mc1, mc2, mc3 = st.columns(3)
+        mc1.metric("Years Saved",       f"{years_saved:.1f} yrs",
+                   delta=f"{months_saved} months", delta_color="normal")
+        mc2.metric("Interest Saved",    f"${interest_saved:,.0f}",
+                   delta_color="normal")
+        mc3.metric("New Payoff Date",   new_payoff.strftime("%b %Y"),
+                   delta=f"vs {status['payoff_date'].strftime('%b %Y')} original",
+                   delta_color="off")
+
+        orig_balances = amort["balance"].tolist()
+        n = max(len(orig_balances), len(accel_balances))
+        orig_padded  = orig_balances  + [0] * (n - len(orig_balances))
+        accel_padded = accel_balances + [0] * (n - len(accel_balances))
+
+        fig_sim = go.Figure()
+        fig_sim.add_trace(go.Scatter(
+            y=orig_padded, name="Original Schedule",
+            line=dict(color=RED, width=2),
+            hovertemplate="Month %{x}<br>Balance: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_sim.add_trace(go.Scatter(
+            y=accel_padded, name=f"With ${extra:,}/mo Extra",
+            line=dict(color=GREEN, width=2.5),
+            hovertemplate="Month %{x}<br>Balance: $%{y:,.0f}<extra></extra>",
+        ))
+        fig_sim.update_layout(**chart_layout(
+            title=f"Balance Paydown: +${extra:,}/mo Extra",
+            yaxis=dict(tickprefix="$", tickformat=",.0f", title="Remaining Balance ($)"),
+            xaxis_title="Payment Month",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+            height=340,
+        ))
+        st.plotly_chart(fig_sim, use_container_width=True)

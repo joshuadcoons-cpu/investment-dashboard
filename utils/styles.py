@@ -74,7 +74,38 @@ def chart_layout(**overrides) -> dict:
 
 
 def inject_css() -> None:
-    st.markdown("""
+    theme = st.session_state.get("theme", "dark")
+    _light_overrides = ""
+    if theme == "light":
+        _light_overrides = """
+        .stApp { background: #f8fafc !important; }
+        h1 { color: #1e293b !important; border-bottom-color: rgba(0,0,0,0.1) !important; }
+        h2 { color: #334155 !important; }
+        h3 { color: #475569 !important; }
+        [data-testid="metric-container"] { background: #ffffff !important; border-color: #e2e8f0 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important; }
+        [data-testid="metric-container"] label { color: #64748b !important; }
+        [data-testid="metric-container"] [data-testid="stMetricValue"] { color: #1e293b !important; }
+        [data-testid="metric-container"] [data-testid="stMetricDelta"] { }
+        [data-testid="stTabs"] button[role="tab"] { color: #94a3b8 !important; }
+        [data-testid="stTabs"] button[role="tab"]:hover { color: #334155 !important; }
+        [data-testid="stTabs"] button[role="tab"][aria-selected="true"] { color: #1e293b !important; }
+        details { background: #ffffff !important; border-color: #e2e8f0 !important; }
+        details summary { color: #334155 !important; }
+        input, select, textarea { background: #ffffff !important; border-color: #cbd5e1 !important; color: #1e293b !important; }
+        [data-testid="stButton"] button { background: #f1f5f9 !important; border-color: #cbd5e1 !important; color: #334155 !important; }
+        [data-testid="stButton"] button:hover { background: #3b82f6 !important; color: white !important; }
+        hr { border-color: rgba(0,0,0,0.08) !important; }
+        [data-testid="stVerticalBlock"] [data-testid="stVerticalBlockBorderWrapper"] { background: #ffffff !important; border-color: #e2e8f0 !important; }
+        .kpi-card { background: linear-gradient(160deg, #ffffff 0%, #f8fafc 100%) !important; border-color: #e2e8f0 !important; box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important; }
+        .kpi-label { color: #64748b !important; }
+        .kpi-value { color: #1e293b !important; }
+        .kpi-sub { color: #64748b !important; }
+        .section-header { color: #64748b !important; border-bottom-color: rgba(0,0,0,0.06) !important; }
+        [data-testid="stSidebar"] { background: #f1f5f9 !important; border-right-color: #e2e8f0 !important; }
+        [data-testid="stProgress"] > div > div { background: #e2e8f0 !important; }
+        """
+
+    st.markdown(f"""
 <style>
 /* ── Fonts — Barlow (BlackRock / McKinsey style geometric sans) ──────────── */
 @import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Barlow+Condensed:wght@500;600;700&display=swap');
@@ -386,5 +417,7 @@ hr {
     background: #080d1a !important;
     border-right: 1px solid rgba(255,255,255,0.05) !important;
 }
+
+{_light_overrides}
 </style>
 """, unsafe_allow_html=True)

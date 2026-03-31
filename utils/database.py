@@ -28,9 +28,34 @@ def _init():
             value TEXT NOT NULL
         )
     """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS net_worth_history (
+            date        TEXT PRIMARY KEY,
+            net_worth   REAL,
+            total_assets REAL,
+            total_liabilities REAL,
+            investments REAL,
+            home_equity REAL,
+            cash        REAL
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS transactions (
+            id      INTEGER PRIMARY KEY AUTOINCREMENT,
+            date    TEXT NOT NULL,
+            account TEXT,
+            ticker  TEXT,
+            action  TEXT,
+            shares  REAL,
+            price   REAL,
+            notes   TEXT
+        )
+    """)
     con.commit()
     con.close()
 
+
+# ── Assumptions ─────────────────────────────────────────────────────────────
 
 def load_assumptions():
     """Return saved assumptions dict or None if no saved data exists."""
@@ -54,5 +79,81 @@ def save_assumptions(assumptions: dict) -> None:
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('assumptions', ?)",
         (json.dumps(data, cls=_DateEncoder),),
     )
+    con.commit()
+    con.close()
+
+
+# ── Net Worth History ───────────────────────────────────────────────────────
+
+def log_net_worth(as_of: date, net_worth: float, total_assets: float,
+                  total_liabilities: float, investments: float,
+                  home_equity: float, cash: float) -> None:
+    _init()
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """INSERT OR REPLACE INTO net_worth_history
+           (date, net_worth, total_assets, total_liabilities,
+            investments, home_equity, cash)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (as_of.isoformat(), net_worth, total_assets, total_liabilities,
+         investments, home_equity, cash),
+    )
+    con.commit()
+    con.close()
+
+
+def get_net_worth_history() -> list[dict]:
+    _init()
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute(
+        "SELECT date, net_worth, total_assets, total_liabilities, "
+        "investments, home_equity, cash "
+        "FROM net_worth_history ORDER BY date"
+    ).fetchall()
+    con.close()
+    return [
+        {"date": r[0], "net_worth": r[1], "total_assets": r[2],
+         "total_liabilities": r[3], "investments": r[4],
+         "home_equity": r[5], "cash": r[6]}
+        for r in rows
+    ]
+
+
+# ── Transactions ────────────────────────────────────────────────────────────
+
+def add_transaction(txn_date: date, account: str, ticker: str,
+                    action: str, shares: float, price: float,
+                    notes: str = "") -> None:
+    _init()
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        """INSERT INTO transactions
+           (date, account, ticker, action, shares, price, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (txn_date.isoformat(), account, ticker, action, shares, price, notes),
+    )
+    con.commit()
+    con.close()
+
+
+def get_transactions() -> list[dict]:
+    _init()
+    con = sqlite3.connect(DB_PATH)
+    rows = con.execute(
+        "SELECT id, date, account, ticker, action, shares, price, notes "
+        "FROM transactions ORDER BY date DESC"
+    ).fetchall()
+    con.close()
+    return [
+        {"id": r[0], "date": r[1], "account": r[2], "ticker": r[3],
+         "action": r[4], "shares": r[5], "price": r[6], "notes": r[7]}
+        for r in rows
+    ]
+
+
+def delete_transaction(txn_id: int) -> None:
+    _init()
+    con = sqlite3.connect(DB_PATH)
+    con.execute("DELETE FROM transactions WHERE id = ?", (txn_id,))
     con.commit()
     con.close()

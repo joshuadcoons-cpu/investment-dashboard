@@ -6,6 +6,7 @@ from utils.calculations import (
     build_amortization, get_loan_status, calc_monthly_payment,
 )
 from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout
+from utils.database import log_net_worth, get_net_worth_history
 
 
 def render():
@@ -38,6 +39,14 @@ def render():
     total_liabilities = sum(liabilities.values())
     net_worth         = total_assets - total_liabilities
     dta_ratio         = total_liabilities / total_assets * 100 if total_assets else 0
+
+    cash_balance = (
+        a["emergency_fund_balance"]
+        + a.get("sinking_fund_balance", 0)
+        + a["checking_savings_balance"]
+    )
+    log_net_worth(date.today(), net_worth, total_assets, total_liabilities,
+                  total_investments, home_equity, cash_balance)
 
     # ═════════════════════════════════════════════════════════════════════════
     # ROW 1 — KPI Cards
@@ -202,3 +211,38 @@ def render():
             f"⚠️ ${gap:,.0f} short of your {a['emergency_fund_target_months']}-month goal "
             f"(currently {coverage:.1f} months)"
         )
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # ROW 5 — Net Worth History
+    # ═════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("📈 Net Worth Over Time")
+
+    history = get_net_worth_history()
+    if len(history) <= 1:
+        st.info("History will build over time as you visit this page.")
+    else:
+        dates = [r["date"] for r in history]
+        fig_hist = go.Figure()
+        fig_hist.add_trace(go.Scatter(
+            x=dates, y=[r["net_worth"] for r in history],
+            name="Net Worth", mode="lines+markers",
+            line=dict(color=PURPLE, width=2),
+        ))
+        fig_hist.add_trace(go.Scatter(
+            x=dates, y=[r["total_assets"] for r in history],
+            name="Total Assets", mode="lines+markers",
+            line=dict(color=GREEN, width=2),
+        ))
+        fig_hist.add_trace(go.Scatter(
+            x=dates, y=[r["total_liabilities"] for r in history],
+            name="Total Liabilities", mode="lines+markers",
+            line=dict(color=RED, width=2),
+        ))
+        fig_hist.update_layout(**chart_layout(
+            title="Net Worth History",
+            height=340,
+            showlegend=True,
+            yaxis=dict(tickprefix="$", tickformat=",.0s"),
+        ))
+        st.plotly_chart(fig_hist, use_container_width=True)
