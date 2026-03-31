@@ -206,8 +206,8 @@ def render():
             orientation="h",
             marker=dict(color=div_colors, line=dict(width=0)),
             text=bar_text,
-            textposition="inside",
-            textfont=dict(size=10, color="white"),
+            textposition="outside",
+            textfont=dict(size=10, color="#cbd5e1"),
             cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
         ))
