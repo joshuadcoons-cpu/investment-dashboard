@@ -45,16 +45,20 @@ def _get_price(ticker: str) -> float | None:
 
 
 @st.cache_data(ttl=300)
-def _fetch_all_prices(tickers: tuple) -> dict:
-    """Fetch prices for all tickers in one batch (cached 5 min)."""
+def _fetch_all_prices(tickers: tuple) -> tuple:
+    """Fetch live prices and previous closes for all tickers (cached 5 min)."""
     prices = {}
+    prev_closes = {}
     for t in tickers:
         yf_t = CRYPTO_YF_MAP.get(t, t)
         try:
-            prices[t] = yf.Ticker(yf_t).fast_info.last_price
+            fi = yf.Ticker(yf_t).fast_info
+            prices[t] = fi.last_price
+            prev_closes[t] = fi.previous_close
         except Exception:
             prices[t] = None
-    return prices
+            prev_closes[t] = None
+    return prices, prev_closes
 
 
 def _fv(pv: float, annual_pmt: float, rate: float, years: int) -> float:
@@ -84,9 +88,12 @@ def render():
                 all_tickers.add(h["ticker"])
 
     live_prices = {}
+    prev_closes = st.session_state.get("prev_prices", {})
     if all_tickers:
         with st.spinner("Fetching live prices..."):
-            live_prices = _fetch_all_prices(tuple(sorted(all_tickers)))
+            live_prices, fetched_prev = _fetch_all_prices(tuple(sorted(all_tickers)))
+            # Merge fetched prev closes (local fetch may have fresher data)
+            prev_closes = {**prev_closes, **{k: v for k, v in fetched_prev.items() if v}}
 
     # ── Compute live market values per account ──────────────────────────────
     def _acct_market_value(acct):
@@ -155,8 +162,16 @@ def render():
 
     grand_total = total_mkt_value + hysa_balance + sinking_balance
 
+    # ── Daily gain across all priced holdings ──────────────────────────────
+    daily_gain = 0.0
+    for acct in accounts:
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if tk and live_prices.get(tk) and prev_closes.get(tk):
+                daily_gain += (live_prices[tk] - prev_closes[tk]) * h["shares"]
+
     # ── KPI Row ─────────────────────────────────────────────────────────────
-    k1, k2, k3, k4, k5 = st.columns(5)
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
     k1.metric("Total Holdings", f"${grand_total:,.0f}",
               delta=f"Portfolio ${total_mkt_value:,.0f} + Cash ${hysa_balance + sinking_balance:,.0f}",
               delta_color="off")
@@ -168,13 +183,21 @@ def render():
               delta=f"{gain_sign}{gain_pct:.1f}% on ${total_cost_basis:,.0f} cost basis",
               delta_color=gain_color)
 
-    k3.metric("Monthly Into Market",
+    day_sign = "+" if daily_gain >= 0 else ""
+    day_color = "normal" if daily_gain >= 0 else "inverse"
+    day_pct = (daily_gain / (total_mkt_value - daily_gain) * 100
+               if (total_mkt_value - daily_gain) != 0 else 0)
+    k3.metric("Today's Move", f"{day_sign}${daily_gain:,.0f}",
+              delta=f"{day_sign}{day_pct:.2f}% vs yesterday's close",
+              delta_color=day_color)
+
+    k4.metric("Monthly Into Market",
               f"${total_monthly + lp_to_jb_monthly:,.0f}",
               delta=f"${total_monthly:,.0f} + ${lp_to_jb_monthly:,.0f} LP",
               delta_color="off")
-    k4.metric("Employer Match", f"${total_match:,.0f}/mo",
+    k5.metric("Employer Match", f"${total_match:,.0f}/mo",
               delta=f"${total_match * 12:,.0f}/yr free", delta_color="off")
-    k5.metric(f"Est. at {ret_age}",
+    k6.metric(f"Est. at {ret_age}",
               f"${est_at_retire / 1_000_000:.2f}M" if est_at_retire >= 1_000_000 else f"${est_at_retire:,.0f}",
               delta=f"{ret_pct:.0f}% return, {years_left}yr", delta_color="off")
 
@@ -391,9 +414,16 @@ def render():
         gain = mv - cb
         gain_pct_acct = (gain / cb * 100) if cb > 0 else 0
 
+        # Daily gain for this account
+        acct_daily = sum(
+            (live_prices[h["ticker"]] - prev_closes[h["ticker"]]) * h["shares"]
+            for h in acct.get("holdings", [])
+            if h.get("ticker") and live_prices.get(h["ticker"]) and prev_closes.get(h["ticker"])
+        )
+
         with st.container(border=True):
             # Header row
-            r1, r2, r3, r4, r5 = st.columns([3, 2, 2, 2, 2])
+            r1, r2, r3, r4, r5, r6 = st.columns([3, 2, 2, 2, 2, 2])
 
             r1.markdown(
                 f'<div style="padding-top:6px">'
@@ -413,7 +443,7 @@ def render():
                 g_color = GREEN if gain >= 0 else RED
                 r3.markdown(
                     f'<div style="padding-top:6px">'
-                    f'<div style="color:#94a3b8;font-size:0.82rem">Gain/Loss</div>'
+                    f'<div style="color:#94a3b8;font-size:0.82rem">Total Gain/Loss</div>'
                     f'<div style="color:{g_color};font-size:1.1rem;font-weight:700">'
                     f'{g_sign}${gain:,.0f}</div>'
                     f'<div style="color:{g_color};font-size:0.75rem">{g_sign}{gain_pct_acct:.1f}%</div>'
@@ -425,13 +455,31 @@ def render():
                           delta=f"${lp_to_jb_monthly:,.0f} LP" if is_jb and lp_to_jb_monthly > 0 else None,
                           delta_color="off")
 
-            r4.metric("Annual", f"${eff_annual:,.0f}")
+            # Today's daily move for this account
+            if acct_daily != 0:
+                ad_sign = "+" if acct_daily >= 0 else ""
+                ad_color = GREEN if acct_daily >= 0 else RED
+                ad_pct = (acct_daily / (mv - acct_daily) * 100
+                          if (mv - acct_daily) != 0 else 0)
+                r4.markdown(
+                    f'<div style="padding-top:6px">'
+                    f'<div style="color:#94a3b8;font-size:0.82rem">Today\'s Move</div>'
+                    f'<div style="color:{ad_color};font-size:1.1rem;font-weight:700">'
+                    f'{ad_sign}${acct_daily:,.0f}</div>'
+                    f'<div style="color:{ad_color};font-size:0.75rem">{ad_sign}{ad_pct:.2f}%</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                r4.metric("Annual", f"${eff_annual:,.0f}")
+
+            r5.metric("Annual", f"${eff_annual:,.0f}")
 
             if match_mo > 0:
-                r5.metric("+ Match", f"${match_mo:,.0f}/mo",
+                r6.metric("+ Match", f"${match_mo:,.0f}/mo",
                           delta=f"${match_mo * 12:,.0f}/yr free")
             elif acct.get("cash_usd", 0) > 0:
-                r5.metric("Cash", f"${acct['cash_usd']:,.0f}")
+                r6.metric("Cash", f"${acct['cash_usd']:,.0f}")
 
             # Notes
             if acct.get("notes"):
@@ -475,17 +523,21 @@ def render():
                 rows = []
                 for h in priced_holdings:
                     price = live_prices[h["ticker"]]
+                    prev  = prev_closes.get(h["ticker"])
                     mkt = h["shares"] * price
                     cost = h["shares"] * h["avg_cost"] if h.get("avg_cost") is not None else None
                     gl = (mkt - cost) if cost is not None else None
                     gl_pct = (gl / cost * 100) if cost and cost > 0 else None
+                    day_chg_usd = ((price - prev) * h["shares"]) if prev else None
+                    day_chg_pct = ((price - prev) / prev * 100) if prev else None
                     rows.append({
                         "Ticker": h["ticker"],
                         "Shares": h["shares"],
                         "Price": price,
+                        "Day Chg ($)": day_chg_usd,
+                        "Day Chg (%)": day_chg_pct,
                         "Avg Cost": h.get("avg_cost"),
                         "Mkt Value": mkt,
-                        "Cost Basis": cost,
                         "Gain ($)": gl,
                         "Gain (%)": gl_pct,
                     })
@@ -496,9 +548,10 @@ def render():
                 fmt = {
                     "Shares": "{:.4f}",
                     "Price": "${:.2f}",
+                    "Day Chg ($)": "${:+,.2f}",
+                    "Day Chg (%)": "{:+.2f}%",
                     "Avg Cost": "${:.2f}",
                     "Mkt Value": "${:,.2f}",
-                    "Cost Basis": "${:,.2f}",
                     "Gain ($)": "${:+,.2f}",
                     "Gain (%)": "{:+.1f}%",
                 }
@@ -513,7 +566,7 @@ def render():
                 styled = (
                     h_df.style
                     .format(fmt, na_rep="--")
-                    .map(_color_gain, subset=["Gain ($)", "Gain (%)"])
+                    .map(_color_gain, subset=["Day Chg ($)", "Day Chg (%)", "Gain ($)", "Gain (%)"])
                 )
 
                 with st.expander(f"Holdings ({len(priced_holdings)} positions)", expanded=False):

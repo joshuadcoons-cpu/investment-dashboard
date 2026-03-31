@@ -28,15 +28,19 @@ CRYPTO_YF = {"BTC": "BTC-USD", "ETH": "ETH-USD", "ADA": "ADA-USD",
              "XRP": "XRP-USD", "DOGE": "DOGE-USD"}
 
 @st.cache_data(ttl=300, show_spinner=False)
-def _fetch_prices(tickers: tuple) -> dict:
+def _fetch_prices(tickers: tuple) -> tuple:
+    """Returns (prices, prev_closes) dicts keyed by ticker."""
     prices = {}
+    prev_closes = {}
     for t in tickers:
         yf_t = CRYPTO_YF.get(t, t)
         try:
-            prices[t] = yf.Ticker(yf_t).fast_info.last_price
+            fi = yf.Ticker(yf_t).fast_info
+            prices[t] = fi.last_price
+            prev_closes[t] = fi.previous_close
         except Exception:
             pass
-    return prices
+    return prices, prev_closes
 
 if "prices_refreshed" not in st.session_state:
     a = st.session_state.assumptions
@@ -46,7 +50,9 @@ if "prices_refreshed" not in st.session_state:
             if h.get("ticker"):
                 all_tickers.add(h["ticker"])
     if all_tickers:
-        prices = _fetch_prices(tuple(sorted(all_tickers)))
+        prices, prev_closes = _fetch_prices(tuple(sorted(all_tickers)))
+        st.session_state.live_prices = prices
+        st.session_state.prev_prices = prev_closes
         for acct in a["investment_accounts"]:
             has_priced = any(
                 h.get("ticker") and prices.get(h["ticker"])

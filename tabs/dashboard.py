@@ -154,6 +154,55 @@ def render():
     st.markdown("<br>", unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
+    # TODAY'S MOVE — daily gain/loss strip
+    # ═══════════════════════════════════════════════════════════════════════════
+    live_prices = st.session_state.get("live_prices", {})
+    prev_prices = st.session_state.get("prev_prices", {})
+
+    if live_prices and prev_prices:
+        # Compute total daily gain and per-account daily gains
+        daily_gain_total = 0.0
+        per_acct_daily = []
+        for acct in a["investment_accounts"]:
+            acct_day = 0.0
+            for h in acct.get("holdings", []):
+                tk = h.get("ticker")
+                if tk and live_prices.get(tk) and prev_prices.get(tk):
+                    acct_day += (live_prices[tk] - prev_prices[tk]) * h["shares"]
+            if acct_day != 0:
+                per_acct_daily.append((acct["label"], acct_day))
+            daily_gain_total += acct_day
+
+        if daily_gain_total != 0:
+            day_sign  = "+" if daily_gain_total >= 0 else ""
+            day_color = GREEN if daily_gain_total >= 0 else RED
+            day_pct   = (daily_gain_total / (total_investments - daily_gain_total) * 100
+                         if (total_investments - daily_gain_total) != 0 else 0)
+            day_arrow = "▲" if daily_gain_total >= 0 else "▼"
+
+            st.markdown(
+                f'<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);'
+                f'border-left:3px solid {day_color};border-radius:10px;'
+                f'padding:0.65rem 1.2rem;margin-bottom:1rem;'
+                f'display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">'
+                f'<span style="color:#64748b;font-size:0.72rem;font-weight:700;'
+                f'text-transform:uppercase;letter-spacing:.08em">Today\'s Move</span>'
+                f'<span style="color:{day_color};font-size:1.25rem;font-weight:700">'
+                f'{day_arrow} {day_sign}${abs(daily_gain_total):,.0f}'
+                f'<span style="font-size:0.85rem;margin-left:6px">'
+                f'({day_sign}{day_pct:.2f}%)</span></span>'
+                + "".join(
+                    f'<span style="color:#475569;font-size:0.8rem">·</span>'
+                    f'<span style="color:{"#94a3b8"};font-size:0.8rem">'
+                    f'{lbl}: <span style="color:{"#10b981" if v >= 0 else "#ef4444"};font-weight:600">'
+                    f'{"+" if v >= 0 else ""}${v:,.0f}</span></span>'
+                    for lbl, v in per_acct_daily
+                )
+                + f'</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ═══════════════════════════════════════════════════════════════════════════
     # ROW 2 — Charts
     # ═══════════════════════════════════════════════════════════════════════════
     c1, c2, c3 = st.columns([1.1, 0.9, 1.0])
