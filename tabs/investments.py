@@ -171,33 +171,26 @@ def render():
                 daily_gain += (live_prices[tk] - prev_closes[tk]) * h["shares"]
 
     # ── KPI Row ─────────────────────────────────────────────────────────────
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("Total Holdings", f"${grand_total:,.0f}",
               delta=f"Portfolio ${total_mkt_value:,.0f} + Cash ${hysa_balance + sinking_balance:,.0f}",
               delta_color="off")
-
-    gain_color = "normal" if total_unrealized >= 0 else "inverse"
-    gain_sign = "+" if total_unrealized >= 0 else ""
-    gain_pct = (total_unrealized / total_cost_basis * 100) if total_cost_basis > 0 else 0
-    k2.metric("Unrealized Gain", f"{gain_sign}${total_unrealized:,.0f}",
-              delta=f"{gain_sign}{gain_pct:.1f}% on ${total_cost_basis:,.0f} cost basis",
-              delta_color=gain_color)
 
     day_sign = "+" if daily_gain >= 0 else ""
     day_color = "normal" if daily_gain >= 0 else "inverse"
     day_pct = (daily_gain / (total_mkt_value - daily_gain) * 100
                if (total_mkt_value - daily_gain) != 0 else 0)
-    k3.metric("Today's Move", f"{day_sign}${daily_gain:,.0f}",
+    k2.metric("Today's Move", f"{day_sign}${daily_gain:,.0f}",
               delta=f"{day_sign}{day_pct:.2f}% vs yesterday's close",
               delta_color=day_color)
 
-    k4.metric("Monthly Into Market",
+    k3.metric("Monthly Into Market",
               f"${total_monthly + lp_to_jb_monthly:,.0f}",
               delta=f"${total_monthly:,.0f} + ${lp_to_jb_monthly:,.0f} LP",
               delta_color="off")
-    k5.metric("Employer Match", f"${total_match:,.0f}/mo",
+    k4.metric("Employer Match", f"${total_match:,.0f}/mo",
               delta=f"${total_match * 12:,.0f}/yr free", delta_color="off")
-    k6.metric(f"Est. at {ret_age}",
+    k5.metric(f"Est. at {ret_age}",
               f"${est_at_retire / 1_000_000:.2f}M" if est_at_retire >= 1_000_000 else f"${est_at_retire:,.0f}",
               delta=f"{ret_pct:.0f}% return, {years_left}yr", delta_color="off")
 
