@@ -200,14 +200,17 @@ def render():
         bar_x = [_compress(v) for v in div_values]
         bar_text = [_fmt(v) for v in div_values]
 
+        # Place labels outside for assets, inside for liabilities (so they don't overlap y-axis)
+        text_pos = ["outside" if v >= 0 else "inside" for v in div_values]
+
         fig_nw = go.Figure(go.Bar(
             y=div_labels,
             x=bar_x,
             orientation="h",
             marker=dict(color=div_colors, line=dict(width=0)),
             text=bar_text,
-            textposition="outside",
-            textfont=dict(size=10, color="#cbd5e1"),
+            textposition=text_pos,
+            textfont=dict(size=10, color="#e2e8f0"),
             cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
         ))
