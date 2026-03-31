@@ -192,10 +192,10 @@ def render():
             return f"${av:,.0f}"
 
         import math
-        # Compress bar widths so small values are visible next to large ones.
-        # sqrt scale preserves sign and relative order but narrows the gap.
+        # Cube-root scale compresses large values aggressively so small
+        # bars ($6k, $14k) are still clearly visible next to $1.7M.
         def _compress(v):
-            return math.copysign(math.sqrt(abs(v)), v)
+            return math.copysign(abs(v) ** (1/3), v)
 
         bar_x = [_compress(v) for v in div_values]
         bar_text = [_fmt(v) for v in div_values]
