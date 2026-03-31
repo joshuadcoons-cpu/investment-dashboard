@@ -105,7 +105,7 @@ def inject_css() -> None:
         [data-testid="stProgress"] > div > div { background: #e2e8f0 !important; }
         """
 
-    st.markdown(f"""
+    _css = """
 <style>
 /* ── Fonts — Barlow (BlackRock / McKinsey style geometric sans) ──────────── */
 @import url('https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Barlow+Condensed:wght@500;600;700&display=swap');
@@ -418,6 +418,7 @@ hr {
     border-right: 1px solid rgba(255,255,255,0.05) !important;
 }
 
-{_light_overrides}
+""" + _light_overrides + """
 </style>
-""", unsafe_allow_html=True)
+"""
+    st.markdown(_css, unsafe_allow_html=True)
