@@ -191,26 +191,32 @@ def render():
                 return f"${av/1_000:.0f}k"
             return f"${av:,.0f}"
 
-        max_abs = max(abs(v) for v in div_values) if div_values else 1
-        bar_text = [_fmt(v) if abs(v) >= max_abs * 0.20 else "" for v in div_values]
+        import math
+        # Compress bar widths so small values are visible next to large ones.
+        # sqrt scale preserves sign and relative order but narrows the gap.
+        def _compress(v):
+            return math.copysign(math.sqrt(abs(v)), v)
+
+        bar_x = [_compress(v) for v in div_values]
+        bar_text = [_fmt(v) for v in div_values]
 
         fig_nw = go.Figure(go.Bar(
             y=div_labels,
-            x=div_values,
+            x=bar_x,
             orientation="h",
             marker=dict(color=div_colors, line=dict(width=0)),
             text=bar_text,
             textposition="inside",
             textfont=dict(size=10, color="white"),
             cliponaxis=False,
+            hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
         ))
         fig_nw.update_layout(**chart_layout(
             height=320,
             showlegend=False,
             margin=dict(l=80),
             xaxis=dict(
-                tickprefix="$",
-                tickformat=",.0s",
+                showticklabels=False,
                 zeroline=True,
                 zerolinewidth=2,
                 zerolinecolor="rgba(255,255,255,0.3)",
