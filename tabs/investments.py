@@ -16,8 +16,9 @@ ACCOUNT_COLORS = {
     "Roth IRA":  GREEN,
     "Brokerage": CYAN,
     "HSA":       "#f97316",
-    "HYSA":      "#f43f5e",   # rose — emergency fund / HYSA
-    "Sinking":   "#f97316",   # orange — sinking fund
+    "HYSA":      "#f43f5e",
+    "Sinking":   "#f97316",
+    "Crypto":    "#a855f7",
 }
 
 SP500_WEIGHTS = {
@@ -27,6 +28,12 @@ SP500_WEIGHTS = {
     "Real Estate": 2, "Materials": 2,
 }
 
+# Yahoo Finance ticker mapping for crypto direct holdings
+CRYPTO_YF_MAP = {
+    "BTC": "BTC-USD", "ETH": "ETH-USD", "ADA": "ADA-USD",
+    "XRP": "XRP-USD", "DOGE": "DOGE-USD",
+}
+
 
 @st.cache_data(ttl=300)
 def _get_price(ticker: str) -> float | None:
@@ -34,6 +41,19 @@ def _get_price(ticker: str) -> float | None:
         return yf.Ticker(ticker).fast_info.last_price
     except Exception:
         return None
+
+
+@st.cache_data(ttl=300)
+def _fetch_all_prices(tickers: tuple) -> dict:
+    """Fetch prices for all tickers in one batch (cached 5 min)."""
+    prices = {}
+    for t in tickers:
+        yf_t = CRYPTO_YF_MAP.get(t, t)
+        try:
+            prices[t] = yf.Ticker(yf_t).fast_info.last_price
+        except Exception:
+            prices[t] = None
+    return prices
 
 
 def _fv(pv: float, annual_pmt: float, rate: float, years: int) -> float:
@@ -49,27 +69,75 @@ def render():
     age      = int(a["age"])
     ret_age  = int(a.get("retirement_age", 65))
 
-    st.header("📈 Investment Accounts")
+    st.header("Investment Accounts")
 
     if not accounts:
-        st.info("Add investment accounts in the ⚙️ Setup tab.")
+        st.info("Add investment accounts in the Setup tab.")
         return
 
-    # ── LP → Joint Brokerage flow (after partial-shelter tax) ────────────────
+    # ── Collect all tickers for batch price fetch ───────────────────────────
+    all_tickers = set()
+    for acct in accounts:
+        for h in acct.get("holdings", []):
+            if h.get("ticker"):
+                all_tickers.add(h["ticker"])
+
+    live_prices = {}
+    if all_tickers:
+        with st.spinner("Fetching live prices..."):
+            live_prices = _fetch_all_prices(tuple(sorted(all_tickers)))
+
+    # ── Compute live market values per account ──────────────────────────────
+    def _acct_market_value(acct):
+        """Market value = sum(shares * live_price) + cash."""
+        cash = acct.get("cash_usd", 0)
+        total = cash
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if tk and live_prices.get(tk):
+                total += h["shares"] * live_prices[tk]
+        return total
+
+    def _acct_cost_basis(acct):
+        """Total cost basis = sum(shares * avg_cost) + cash."""
+        cash = acct.get("cash_usd", 0)
+        total = cash
+        for h in acct.get("holdings", []):
+            if h.get("avg_cost") is not None:
+                total += h["shares"] * h["avg_cost"]
+        return total
+
+    # Compute live balances (fall back to stored balance if no live prices)
+    acct_mkt_values = {}
+    acct_cost_bases = {}
+    for acct in accounts:
+        has_priced_holdings = any(
+            h.get("ticker") and live_prices.get(h["ticker"])
+            for h in acct.get("holdings", [])
+        )
+        if has_priced_holdings:
+            acct_mkt_values[acct["_id"]] = _acct_market_value(acct)
+        else:
+            acct_mkt_values[acct["_id"]] = acct["balance"]
+        acct_cost_bases[acct["_id"]] = _acct_cost_basis(acct)
+
+    # ── LP -> Joint Brokerage flow ──────────────────────────────────────────
     lp_jb_pct        = a.get("lp_jb_pct", 85)
-    lp_net_factor    = a.get("lp_net_pct", 100) / 100   # e.g. 0.75 = 75% kept after tax
+    lp_net_factor    = a.get("lp_net_pct", 100) / 100
     lp_gross_monthly = a.get("parkwood_lp_monthly", 0)
     lp_net_monthly   = lp_gross_monthly * lp_net_factor
     lp_to_jb_monthly = lp_net_monthly * lp_jb_pct / 100
     lp_to_jb_annual  = lp_to_jb_monthly * 12
 
-    # ── HYSA / Emergency Fund ─────────────────────────────────────────────────
+    # ── HYSA / Emergency Fund ───────────────────────────────────────────────
     hysa_balance    = a.get("emergency_fund_balance", 0)
     sinking_balance = a.get("sinking_fund_balance", 0)
     hysa_target_mo  = a.get("emergency_fund_target_months", 6)
 
-    # ── Investment account totals ─────────────────────────────────────────────
-    total_balance = sum(acct["balance"] for acct in accounts)
+    # ── Portfolio totals (live) ─────────────────────────────────────────────
+    total_mkt_value = sum(acct_mkt_values.values())
+    total_cost_basis = sum(acct_cost_bases.values())
+    total_unrealized = total_mkt_value - total_cost_basis
     total_monthly = sum(acct["monthly_contribution"] for acct in accounts)
 
     total_match = 0.0
@@ -78,41 +146,48 @@ def render():
             cap          = a["gross_income"] * acct.get("employer_match_ceiling_pct", 0) / 100 / 12
             total_match += min(acct["monthly_contribution"], cap) * acct["employer_match_pct"] / 100
 
-    # Growth projection inputs: regular + LP inflow + employer match
     monthly_total_in = total_monthly + lp_to_jb_monthly + total_match
     annual_total_in  = monthly_total_in * 12
     ret_pct          = float(a.get("investment_return_pct", 7.0))
     years_left       = max(1, ret_age - age)
-    est_at_retire    = _fv(total_balance, annual_total_in, ret_pct / 100, years_left)
+    est_at_retire    = _fv(total_mkt_value, annual_total_in, ret_pct / 100, years_left)
 
-    # Grand total shown in headline (investments + HYSA + sinking fund)
-    grand_total = total_balance + hysa_balance + sinking_balance
+    grand_total = total_mkt_value + hysa_balance + sinking_balance
 
-    # ── KPI Row ───────────────────────────────────────────────────────────────
-    k1, k2, k3, k4 = st.columns(4)
-    k1.metric("💼 Total Holdings", f"${grand_total:,.0f}",
-              delta=f"Invested ${total_balance:,.0f}  +  HYSA ${hysa_balance:,.0f}",
+    # ── KPI Row ─────────────────────────────────────────────────────────────
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric("Total Holdings", f"${grand_total:,.0f}",
+              delta=f"Portfolio ${total_mkt_value:,.0f} + Cash ${hysa_balance + sinking_balance:,.0f}",
               delta_color="off")
-    k2.metric("📥 Monthly Into Market",
+
+    gain_color = "normal" if total_unrealized >= 0 else "inverse"
+    gain_sign = "+" if total_unrealized >= 0 else ""
+    gain_pct = (total_unrealized / total_cost_basis * 100) if total_cost_basis > 0 else 0
+    k2.metric("Unrealized Gain", f"{gain_sign}${total_unrealized:,.0f}",
+              delta=f"{gain_sign}{gain_pct:.1f}% on ${total_cost_basis:,.0f} cost basis",
+              delta_color=gain_color)
+
+    k3.metric("Monthly Into Market",
               f"${total_monthly + lp_to_jb_monthly:,.0f}",
-              delta=f"${total_monthly:,.0f} contributions  +  ${lp_to_jb_monthly:,.0f} LP inflow",
+              delta=f"${total_monthly:,.0f} + ${lp_to_jb_monthly:,.0f} LP",
               delta_color="off")
-    k3.metric("🤝 Employer Match", f"${total_match:,.0f}/mo",
+    k4.metric("Employer Match", f"${total_match:,.0f}/mo",
               delta=f"${total_match * 12:,.0f}/yr free", delta_color="off")
-    k4.metric(f"🎯 Est. at Retirement (age {ret_age})",
+    k5.metric(f"Est. at {ret_age}",
               f"${est_at_retire / 1_000_000:.2f}M" if est_at_retire >= 1_000_000 else f"${est_at_retire:,.0f}",
-              delta=f"at {ret_pct:.1f}% return · {years_left}yr", delta_color="off")
+              delta=f"{ret_pct:.0f}% return, {years_left}yr", delta_color="off")
 
     st.divider()
 
-    # ── Allocation donut  +  Contribution Health ───────────────────────────────
+    # ── Allocation donut + Contribution Health ──────────────────────────────
     left_col, right_col = st.columns([1, 1])
 
     with left_col:
-        alloc_rows = [
-            {"Account": acct["label"], "Type": acct["account_type"], "Balance": acct["balance"]}
-            for acct in accounts if acct["balance"] > 0
-        ]
+        alloc_rows = []
+        for acct in accounts:
+            mv = acct_mkt_values[acct["_id"]]
+            if mv > 0:
+                alloc_rows.append({"Account": acct["label"], "Type": acct["account_type"], "Balance": mv})
         if hysa_balance > 0:
             alloc_rows.append({"Account": "HYSA", "Type": "HYSA", "Balance": hysa_balance})
         if sinking_balance > 0:
@@ -121,7 +196,8 @@ def render():
         if alloc_rows:
             alloc_df = pd.DataFrame(alloc_rows)
             colors   = [ACCOUNT_COLORS.get(t, "#475569") for t in alloc_df["Type"]]
-            n_accts  = len(accounts) + (1 if hysa_balance > 0 else 0) + (1 if sinking_balance > 0 else 0)
+            n_accts  = len([ac for ac in accounts if acct_mkt_values[ac["_id"]] > 0])
+            n_accts += (1 if hysa_balance > 0 else 0) + (1 if sinking_balance > 0 else 0)
 
             fig_donut = go.Figure(go.Pie(
                 labels=alloc_df["Account"],
@@ -140,31 +216,30 @@ def render():
             )
             fig_donut.update_layout(**chart_layout(
                 title="Portfolio by Account",
-                height=340,
+                height=380,
                 showlegend=True,
                 legend=dict(
                     orientation="h",
-                    x=0.5, y=-0.08,
+                    x=0.5, y=-0.15,
                     xanchor="center",
-                    font=dict(size=11, color="#e2e8f0"),
+                    font=dict(size=10, color="#e2e8f0"),
+                    itemwidth=30,
                 ),
-                margin=dict(l=20, r=20, t=50, b=20),
+                margin=dict(l=20, r=20, t=50, b=80),
             ))
             st.plotly_chart(fig_donut, use_container_width=True)
         else:
-            st.info("Add balances in ⚙️ Setup to see allocation.")
+            st.info("Add balances in Setup to see allocation.")
 
     with right_col:
         st.markdown("##### Contribution Health")
         st.caption(f"YTD contributions vs {date.today().year} IRS limits")
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Months elapsed in current calendar year (e.g. March 18 ≈ 2.58 months)
         _today = date.today()
         _months_elapsed = (_today - date(_today.year, 1, 1)).days / 365 * 12
 
         for acct in accounts:
-            # Rollover IRA (or any account flagged) — skip contribution tracking
             if acct.get("skip_contribution"):
                 continue
 
@@ -175,7 +250,6 @@ def render():
             limit        = limits.get("catchup" if age >= catchup_age else "base")
             is_jb        = acct_type == "Brokerage"
 
-            # YTD actual: use explicit ytd_contributed field if set, else infer from months elapsed
             ytd_c        = acct.get("ytd_contributed",
                                     acct["monthly_contribution"] * _months_elapsed)
             display_ann  = acct["monthly_contribution"] * 12 + (lp_to_jb_annual if is_jb else 0)
@@ -195,20 +269,20 @@ def render():
                 pct     = min(ytd_c / limit * 100, 100)
                 room    = max(0, limit - ytd_c)
                 bar_col = GREEN if pct >= 100 else (AMBER if pct >= 80 else BLUE)
-                status  = "✅ Maxed!" if room < 1 else f"${room:,.0f} left this year"
+                status  = "Maxed!" if room < 1 else f"${room:,.0f} left this year"
                 st.markdown(
                     f'<div style="background:#1e293b;border-radius:6px;height:10px;overflow:hidden">'
                     f'<div style="background:{bar_col};width:{pct:.1f}%;height:10px;'
                     f'border-radius:6px"></div></div>'
                     f'<div style="display:flex;justify-content:space-between;'
                     f'color:#94a3b8;font-size:0.75rem;margin-top:4px;margin-bottom:16px">'
-                    f'<span>${ytd_c:,.0f} of ${limit:,.0f} YTD · {pct:.0f}%</span>'
+                    f'<span>${ytd_c:,.0f} of ${limit:,.0f} YTD</span>'
                     f'<span style="color:{"#22c55e" if room < 1 else "#94a3b8"}">{status}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
             else:
-                lp_note = (f" · incl. ${lp_to_jb_annual:,.0f} LP inflow"
+                lp_note = (f" incl. ${lp_to_jb_annual:,.0f} LP inflow"
                            if is_jb and lp_to_jb_annual > 0 else "")
                 st.markdown(
                     f'<div style="color:#64748b;font-size:0.8rem;margin-bottom:16px">'
@@ -218,11 +292,11 @@ def render():
 
     st.divider()
 
-    # ── Growth Projection ─────────────────────────────────────────────────────
-    st.subheader("📊 Growth Projection")
+    # ── Growth Projection ───────────────────────────────────────────────────
+    st.subheader("Growth Projection")
     st.caption(
-        f"${total_monthly:,.0f}/mo regular contributions  ·  "
-        f"${lp_to_jb_monthly:,.0f}/mo LP inflow ({lp_jb_pct}% of quarterly distributions)  ·  "
+        f"${total_monthly:,.0f}/mo contributions  ·  "
+        f"${lp_to_jb_monthly:,.0f}/mo LP inflow  ·  "
         f"${total_match:,.0f}/mo employer match"
     )
 
@@ -232,7 +306,7 @@ def render():
 
     def series(rate_pct):
         r = rate_pct / 100
-        return [_fv(total_balance, annual_total_in, r, y) for y in years_list]
+        return [_fv(total_mkt_value, annual_total_in, r, y) for y in years_list]
 
     base_s = series(ret_pct)
     bull_s = series(ret_pct + 3)
@@ -244,7 +318,7 @@ def render():
         y=bull_s + bear_s[::-1],
         fill="toself", fillcolor="rgba(59,130,246,0.10)",
         line=dict(width=0), showlegend=True,
-        name=f"Range ({max(ret_pct - 3, 1):.0f}%–{ret_pct + 3:.0f}%)",
+        name=f"Range ({max(ret_pct - 3, 1):.0f}%-{ret_pct + 3:.0f}%)",
         hoverinfo="skip",
     ))
     fig_g.add_trace(go.Scatter(
@@ -262,7 +336,6 @@ def render():
         annotation_font_color="#94a3b8",
         annotation_position="top right",
     )
-    # Milestone lines: subtle at $1M, stronger at $5M
     _y_max = max(bull_s) * 1.08
     _y_min = min(100_000, min(bear_s) * 0.92)
     for m in range(1_000_000, int(_y_max) + 1, 1_000_000):
@@ -288,19 +361,22 @@ def render():
 
     st.divider()
 
-    # ── Account Detail Cards ──────────────────────────────────────────────────
-    st.subheader("🗂️ Account Details")
+    # ═════════════════════════════════════════════════════════════════════════
+    # ACCOUNT DETAIL CARDS (with gains)
+    # ═════════════════════════════════════════════════════════════════════════
+    st.subheader("Account Details")
+
+    _today = date.today()
+    _months_elapsed = (_today - date(_today.year, 1, 1)).days / 365 * 12
 
     for acct in accounts:
-        acct_type  = acct["account_type"]
-        color      = ACCOUNT_COLORS.get(acct_type, "#475569")
-        limits     = ACCOUNT_LIMITS.get(acct_type, {})
-        catchup_age= 55 if acct_type == "HSA" else 50
-        limit      = limits.get("catchup" if age >= catchup_age else "base")
-        annual_c   = acct["monthly_contribution"] * 12
-        is_jb      = acct_type == "Brokerage"
+        acct_type   = acct["account_type"]
+        color       = ACCOUNT_COLORS.get(acct_type, "#475569")
+        limits      = ACCOUNT_LIMITS.get(acct_type, {})
+        catchup_age = 55 if acct_type == "HSA" else 50
+        limit       = limits.get("catchup" if age >= catchup_age else "base")
+        is_jb       = acct_type == "Brokerage"
 
-        # Effective monthly shown on card (includes LP inflow for JB)
         eff_monthly = acct["monthly_contribution"] + (lp_to_jb_monthly if is_jb else 0)
         eff_annual  = eff_monthly * 12
 
@@ -309,7 +385,13 @@ def render():
             cap      = a["gross_income"] * acct.get("employer_match_ceiling_pct", 0) / 100 / 12
             match_mo = min(acct["monthly_contribution"], cap) * acct["employer_match_pct"] / 100
 
+        mv = acct_mkt_values[acct["_id"]]
+        cb = acct_cost_bases[acct["_id"]]
+        gain = mv - cb
+        gain_pct_acct = (gain / cb * 100) if cb > 0 else 0
+
         with st.container(border=True):
+            # Header row
             r1, r2, r3, r4, r5 = st.columns([3, 2, 2, 2, 2])
 
             r1.markdown(
@@ -322,27 +404,46 @@ def render():
                 f'</div>',
                 unsafe_allow_html=True,
             )
-            r2.metric("Balance", f"${acct['balance']:,.0f}")
-            r3.metric("Monthly", f"${eff_monthly:,.0f}",
-                      delta=f"${lp_to_jb_monthly:,.0f} LP inflow" if is_jb and lp_to_jb_monthly > 0 else None,
-                      delta_color="off")
-            r4.metric("Annual",  f"${eff_annual:,.0f}")
+            r2.metric("Market Value", f"${mv:,.0f}")
+
+            # Gain/Loss metric
+            if cb > 0 and any(h.get("avg_cost") is not None for h in acct.get("holdings", [])):
+                g_sign = "+" if gain >= 0 else ""
+                g_color = GREEN if gain >= 0 else RED
+                r3.markdown(
+                    f'<div style="padding-top:6px">'
+                    f'<div style="color:#94a3b8;font-size:0.82rem">Gain/Loss</div>'
+                    f'<div style="color:{g_color};font-size:1.1rem;font-weight:700">'
+                    f'{g_sign}${gain:,.0f}</div>'
+                    f'<div style="color:{g_color};font-size:0.75rem">{g_sign}{gain_pct_acct:.1f}%</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                r3.metric("Monthly", f"${eff_monthly:,.0f}",
+                          delta=f"${lp_to_jb_monthly:,.0f} LP" if is_jb and lp_to_jb_monthly > 0 else None,
+                          delta_color="off")
+
+            r4.metric("Annual", f"${eff_annual:,.0f}")
 
             if match_mo > 0:
                 r5.metric("+ Match", f"${match_mo:,.0f}/mo",
                           delta=f"${match_mo * 12:,.0f}/yr free")
-            elif acct_type in ("401k", "Roth 401k") and acct.get("employer_match_ceiling_pct", 0) > 0:
-                cap_mo = a["gross_income"] * acct.get("employer_match_ceiling_pct", 0) / 100 / 12
-                r5.metric("Match available", f"${cap_mo:,.0f}/mo needed",
-                          delta="not yet captured", delta_color="inverse")
+            elif acct.get("cash_usd", 0) > 0:
+                r5.metric("Cash", f"${acct['cash_usd']:,.0f}")
 
+            # Notes
+            if acct.get("notes"):
+                st.caption(acct["notes"])
+
+            # IRS limit progress bar
             if limit:
                 card_ytd = acct.get("ytd_contributed",
                                     acct["monthly_contribution"] * _months_elapsed)
                 pct      = min(card_ytd / limit * 100, 100)
                 room     = max(0, limit - card_ytd)
                 bar_col  = GREEN if pct >= 100 else (AMBER if pct >= 80 else BLUE)
-                status   = "✅ Maxed out!" if room < 1 else f"${room:,.0f} left this year"
+                status   = "Maxed!" if room < 1 else f"${room:,.0f} left this year"
                 st.markdown(
                     f'<div style="margin-top:10px;background:#0f172a;border-radius:6px;'
                     f'height:8px;overflow:hidden">'
@@ -350,7 +451,7 @@ def render():
                     f'border-radius:6px"></div></div>'
                     f'<div style="display:flex;justify-content:space-between;'
                     f'color:#94a3b8;font-size:0.75rem;margin-top:4px">'
-                    f'<span>${card_ytd:,.0f} of ${limit:,.0f} IRS limit YTD · {pct:.0f}%</span>'
+                    f'<span>${card_ytd:,.0f} of ${limit:,.0f} IRS limit YTD</span>'
                     f'<span style="color:{"#22c55e" if room < 1 else "#cbd5e1"}">{status}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
@@ -358,17 +459,87 @@ def render():
             elif is_jb and lp_to_jb_monthly > 0:
                 st.markdown(
                     f'<div style="margin-top:10px;color:#64748b;font-size:0.75rem">'
-                    f'💧 ${lp_to_jb_monthly:,.0f}/mo LP inflow ({lp_jb_pct}% of quarterly '
-                    f'distributions)  ·  ${lp_to_jb_annual:,.0f}/yr  ·  No IRS limit'
+                    f'${lp_to_jb_monthly:,.0f}/mo LP inflow ({lp_jb_pct}% of distributions)  ·  '
+                    f'${lp_to_jb_annual:,.0f}/yr  ·  No IRS limit'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-    # ── HYSA / Emergency Fund Card ────────────────────────────────────────────
-    st.divider()
-    st.subheader("🏦 HYSA / Emergency Fund + Sinking Fund")
+            # ── Per-holding gains table (for accounts with priced holdings) ─
+            priced_holdings = [
+                h for h in acct.get("holdings", [])
+                if h.get("ticker") and live_prices.get(h["ticker"])
+            ]
+            if priced_holdings:
+                rows = []
+                for h in priced_holdings:
+                    price = live_prices[h["ticker"]]
+                    mkt = h["shares"] * price
+                    cost = h["shares"] * h["avg_cost"] if h.get("avg_cost") is not None else None
+                    gl = (mkt - cost) if cost is not None else None
+                    gl_pct = (gl / cost * 100) if cost and cost > 0 else None
+                    rows.append({
+                        "Ticker": h["ticker"],
+                        "Shares": h["shares"],
+                        "Price": price,
+                        "Avg Cost": h.get("avg_cost"),
+                        "Mkt Value": mkt,
+                        "Cost Basis": cost,
+                        "Gain ($)": gl,
+                        "Gain (%)": gl_pct,
+                    })
 
-    # Estimate monthly living expenses for coverage calculation
+                h_df = pd.DataFrame(rows)
+
+                # Format the dataframe for display
+                fmt = {
+                    "Shares": "{:.4f}",
+                    "Price": "${:.2f}",
+                    "Avg Cost": "${:.2f}",
+                    "Mkt Value": "${:,.2f}",
+                    "Cost Basis": "${:,.2f}",
+                    "Gain ($)": "${:+,.2f}",
+                    "Gain (%)": "{:+.1f}%",
+                }
+
+                def _color_gain(val):
+                    if pd.isna(val) or val is None:
+                        return ""
+                    if isinstance(val, str):
+                        return ""
+                    return f"color: {GREEN}" if val >= 0 else f"color: {RED}"
+
+                styled = (
+                    h_df.style
+                    .format(fmt, na_rep="--")
+                    .map(_color_gain, subset=["Gain ($)", "Gain (%)"])
+                )
+
+                with st.expander(f"Holdings ({len(priced_holdings)} positions)", expanded=False):
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+            # 401k fund allocations (no live prices)
+            fund_holdings = [
+                h for h in acct.get("holdings", [])
+                if h.get("ticker") is None and h.get("fund_name")
+            ]
+            if fund_holdings and acct["balance"] > 0:
+                with st.expander("Fund Allocation", expanded=False):
+                    for fh in fund_holdings:
+                        alloc_val = acct["balance"] * fh["pct"] / 100
+                        st.markdown(
+                            f'<div style="display:flex;justify-content:space-between;'
+                            f'padding:4px 0;color:#e2e8f0;font-size:0.85rem">'
+                            f'<span>{fh["fund_name"]}</span>'
+                            f'<span style="color:#94a3b8">{fh["pct"]}% · ${alloc_val:,.0f}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+
+    # ── HYSA / Emergency Fund Card ──────────────────────────────────────────
+    st.divider()
+    st.subheader("HYSA / Emergency Fund + Sinking Fund")
+
     monthly_pi    = calc_monthly_payment(
         a["loan_original_amount"], a["loan_interest_rate"], a["loan_term_years"])
     monthly_tax   = a["home_current_value"] * a["property_tax_rate"] / 100 / 12
@@ -397,11 +568,11 @@ def render():
             f'</div>',
             unsafe_allow_html=True,
         )
-        hc2.metric("Balance",      f"${hysa_balance:,.0f}")
-        hc3.metric("Coverage",     f"{months_covered:.1f} mo",
+        hc2.metric("Balance",  f"${hysa_balance:,.0f}")
+        hc3.metric("Coverage", f"{months_covered:.1f} mo",
                    delta=f"Target: {hysa_target_mo} mo", delta_color="off")
-        hc4.metric("Target",       f"${target_balance:,.0f}",
-                   delta=f"${gap:,.0f} to go" if gap > 0 else "✅ Fully funded",
+        hc4.metric("Target",   f"${target_balance:,.0f}",
+                   delta=f"${gap:,.0f} to go" if gap > 0 else "Fully funded",
                    delta_color="inverse" if gap > 0 else "off")
 
         st.markdown(
@@ -411,65 +582,52 @@ def render():
             f'border-radius:6px"></div></div>'
             f'<div style="display:flex;justify-content:space-between;'
             f'color:#94a3b8;font-size:0.75rem;margin-top:4px">'
-            f'<span>${hysa_balance:,.0f} of ${target_balance:,.0f} target · {pct_of_target:.0f}%</span>'
+            f'<span>${hysa_balance:,.0f} of ${target_balance:,.0f} target</span>'
             f'<span style="color:{"#22c55e" if gap == 0 else "#cbd5e1"}">'
-            f'{"✅ Fully funded" if gap == 0 else f"${gap:,.0f} to fund {hysa_target_mo}mo target"}'
+            f'{"Fully funded" if gap == 0 else f"${gap:,.0f} to fund {hysa_target_mo}mo target"}'
             f'</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
 
-    # ── Sector Allocation ─────────────────────────────────────────────────────
+    # ── Sector Allocation ───────────────────────────────────────────────────
     st.divider()
-    st.subheader("🗺️ Sector Allocation")
+    st.subheader("Sector Allocation")
 
     all_holdings = []
     for acct in accounts:
         for h in acct.get("holdings", []):
             if h.get("ticker") and h.get("shares", 0) > 0:
+                price = live_prices.get(h["ticker"]) or 0
                 all_holdings.append({
                     "ticker":  h["ticker"],
                     "shares":  h["shares"],
                     "sector":  h.get("sector", "Unknown"),
                     "account": acct["label"],
+                    "price":   price,
+                    "value":   h["shares"] * price,
                 })
 
     if not all_holdings:
         st.markdown(
             '<div style="background:#0f172a;border:1px dashed #334155;border-radius:10px;'
             'padding:32px;text-align:center;color:#64748b">'
-            '<div style="font-size:2rem;margin-bottom:8px">📂</div>'
-            '<div style="font-size:1rem;font-weight:600;color:#94a3b8;margin-bottom:4px">'
-            'No holdings added yet</div>'
-            '<div style="font-size:0.85rem">Add tickers in ⚙️ Setup → Investment Accounts → Holdings</div>'
+            '<div style="font-size:2rem;margin-bottom:8px">No holdings added yet</div>'
+            '<div style="font-size:0.85rem">Add tickers in Setup</div>'
             '</div>',
             unsafe_allow_html=True,
         )
     else:
-        with st.spinner("Fetching live prices…"):
-            rows = []
-            for h in all_holdings:
-                price = _get_price(h["ticker"]) or 0
-                value = price * h["shares"]
-                rows.append({
-                    "Ticker":  h["ticker"],
-                    "Account": h["account"],
-                    "Sector":  h["sector"],
-                    "Shares":  h["shares"],
-                    "Price":   price,
-                    "Value":   value,
-                })
-
-        hold_df   = pd.DataFrame(rows)
-        total_val = hold_df["Value"].sum()
+        hold_df   = pd.DataFrame(all_holdings)
+        total_val = hold_df["value"].sum()
 
         if total_val == 0:
-            st.warning("Prices unavailable — check ticker symbols or try again later.")
+            st.warning("Prices unavailable. Try again later.")
         else:
             sector_df = (
-                hold_df.groupby("Sector")["Value"]
+                hold_df.groupby("sector")["value"]
                 .sum().reset_index()
-                .rename(columns={"Value": "Value ($)"})
+                .rename(columns={"value": "Value ($)"})
             )
             sector_df["Weight (%)"] = sector_df["Value ($)"] / total_val * 100
             sector_df = sector_df.sort_values("Value ($)", ascending=False)
@@ -477,11 +635,11 @@ def render():
             left, right = st.columns([1, 1])
 
             with left:
-                ticker_df = hold_df.groupby(["Sector", "Ticker"])["Value"].sum().reset_index()
-                ticker_df = ticker_df[ticker_df["Value"] > 0]
+                ticker_df = hold_df.groupby(["sector", "ticker"])["value"].sum().reset_index()
+                ticker_df = ticker_df[ticker_df["value"] > 0]
                 fig_st = px.treemap(
-                    ticker_df, path=["Sector", "Ticker"], values="Value",
-                    color="Value",
+                    ticker_df, path=["sector", "ticker"], values="value",
+                    color="value",
                     color_continuous_scale=[[0, "#1e293b"], [0.5, PURPLE], [1, BLUE]],
                     title="Holdings by Sector",
                 )
@@ -496,20 +654,20 @@ def render():
                 for _, row in sector_df.iterrows():
                     if row["Weight (%)"] > 30:
                         st.warning(
-                            f"⚠️ Heavy concentration in **{row['Sector']}** "
+                            f"Heavy concentration in **{row['sector']}** "
                             f"({row['Weight (%)']:.1f}%) — consider diversifying"
                         )
 
             with right:
                 all_sectors = list(SP500_WEIGHTS.keys()) + [
-                    s for s in sector_df["Sector"].tolist()
+                    s for s in sector_df["sector"].tolist()
                     if s not in SP500_WEIGHTS
                 ]
                 all_sectors = list(dict.fromkeys(all_sectors))
 
                 compare_rows = []
                 for s in all_sectors:
-                    your_w = sector_df.loc[sector_df["Sector"] == s, "Weight (%)"].values
+                    your_w = sector_df.loc[sector_df["sector"] == s, "Weight (%)"].values
                     compare_rows.append({
                         "Sector":  s,
                         "Yours":   float(your_w[0]) if len(your_w) else 0.0,
@@ -538,19 +696,60 @@ def render():
                 ))
                 st.plotly_chart(fig_cmp, use_container_width=True)
 
-            st.subheader("Holdings Detail")
-            disp = hold_df[["Ticker", "Account", "Sector", "Shares", "Price", "Value"]].copy()
-            disp["Value"] = disp["Value"].round(2)
-            st.dataframe(
-                disp.style.format({
-                    "Shares": "{:.4f}", "Price": "${:.2f}", "Value": "${:,.2f}",
-                }),
-                use_container_width=True, hide_index=True,
-            )
+            # ── Full Holdings Table with Gains ──────────────────────────────
+            st.subheader("All Holdings")
+            gain_rows = []
+            for acct in accounts:
+                for h in acct.get("holdings", []):
+                    tk = h.get("ticker")
+                    if not tk:
+                        continue
+                    price = live_prices.get(tk) or 0
+                    mkt = h["shares"] * price
+                    cost = h["shares"] * h["avg_cost"] if h.get("avg_cost") is not None else None
+                    gl = (mkt - cost) if cost is not None else None
+                    gl_pct = (gl / cost * 100) if cost and cost > 0 else None
+                    gain_rows.append({
+                        "Account": acct["label"],
+                        "Ticker": tk,
+                        "Shares": h["shares"],
+                        "Price": price,
+                        "Avg Cost": h.get("avg_cost"),
+                        "Mkt Value": mkt,
+                        "Cost Basis": cost,
+                        "Gain ($)": gl,
+                        "Gain (%)": gl_pct,
+                    })
 
-    # ── Live Stock / ETF Lookup ───────────────────────────────────────────────
+            if gain_rows:
+                g_df = pd.DataFrame(gain_rows)
+                fmt = {
+                    "Shares": "{:.4f}",
+                    "Price": "${:.2f}",
+                    "Avg Cost": "${:.2f}",
+                    "Mkt Value": "${:,.2f}",
+                    "Cost Basis": "${:,.2f}",
+                    "Gain ($)": "${:+,.2f}",
+                    "Gain (%)": "{:+.1f}%",
+                }
+
+                def _color_gain(val):
+                    if pd.isna(val) or val is None:
+                        return ""
+                    if isinstance(val, str):
+                        return ""
+                    return f"color: {GREEN}" if val >= 0 else f"color: {RED}"
+
+                styled = (
+                    g_df.style
+                    .format(fmt, na_rep="--")
+                    .map(_color_gain, subset=["Gain ($)", "Gain (%)"])
+                )
+                st.dataframe(styled, use_container_width=True, hide_index=True)
+
+    # ── Live Stock / ETF Lookup ─────────────────────────────────────────────
     st.divider()
-    st.subheader("🔍 Live Stock / ETF Lookup")
+    st.subheader("Live Stock / ETF Lookup")
     sc1, sc2   = st.columns([2, 1])
     ticker_in  = sc1.text_input("Ticker symbol (e.g. AAPL, VTI, BTC-USD)", "").upper().strip()
     period     = sc2.selectbox("Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)

@@ -483,6 +483,13 @@ def render():
                         step=100, key=f"ytd_{aid}_v{v}",
                         help="Actual contributions so far this year")
 
+                # Cash in account
+                if not has_limit or acct.get("account_type") in ("Brokerage",):
+                    acct["cash_usd"] = ac4.number_input(
+                        "Cash in Account ($)", 0, 10_000_000,
+                        int(acct.get("cash_usd", 0)),
+                        step=100, key=f"cash_{aid}_v{v}")
+
                 # Employer match (only for 401k types)
                 if acct["account_type"] in ["401k", "Roth 401k"]:
                     mc1, mc2, _, _ = st.columns(4)
@@ -506,33 +513,39 @@ def render():
                 ):
                     if holdings:
                         for j, h in enumerate(holdings):
-                            hc1, hc2, hc3, hc4 = st.columns([2, 2, 3, 1])
+                            hc1, hc2, hc3, hc4, hc5 = st.columns([2, 1.5, 1.5, 2.5, 0.5])
                             h["ticker"] = hc1.text_input(
                                 "Ticker", h.get("ticker", ""),
                                 key=f"ht_{aid}_{j}_v{v}").upper().strip()
                             h["shares"] = hc2.number_input(
                                 "Shares", 0.0, 1e7, float(h.get("shares", 0)),
                                 step=0.01, format="%.4f", key=f"hs_{aid}_{j}_v{v}")
+                            h["avg_cost"] = hc3.number_input(
+                                "Avg Cost", 0.0, 1e6,
+                                float(h.get("avg_cost", 0) or 0),
+                                step=0.01, format="%.4f", key=f"hcb_{aid}_{j}_v{v}") or None
                             sec_idx = (SECTORS.index(h.get("sector", "Unknown"))
                                        if h.get("sector", "Unknown") in SECTORS
                                        else len(SECTORS) - 1)
-                            h["sector"] = hc3.selectbox(
+                            h["sector"] = hc4.selectbox(
                                 "Sector", SECTORS, index=sec_idx, key=f"hsc_{aid}_{j}_v{v}")
-                            if hc4.button("🗑️", key=f"hd_{aid}_{j}_v{v}"):
+                            if hc5.button("🗑️", key=f"hd_{aid}_{j}_v{v}"):
                                 holdings.pop(j)
                                 st.session_state.ui_ver = v + 1
                                 st.rerun()
 
                     st.caption("**Add holding:**")
-                    na1, na2, na3, na4 = st.columns([2, 2, 3, 1])
+                    na1, na2, na3, na4, na5 = st.columns([2, 1.5, 1.5, 2.5, 0.5])
                     nt = na1.text_input("Ticker", key=f"nt_{aid}_v{v}").upper().strip()
                     ns = na2.number_input("Shares", 0.0, 1e7, 0.0,
                                           step=0.01, format="%.4f", key=f"ns_{aid}_v{v}")
-                    nsc = na3.selectbox("Sector", SECTORS, index=0, key=f"nsc_{aid}_v{v}")
-                    if na4.button("➕", key=f"ah_{aid}_v{v}") and nt:
+                    ncb = na3.number_input("Avg Cost", 0.0, 1e6, 0.0,
+                                           step=0.01, format="%.4f", key=f"ncb_{aid}_v{v}")
+                    nsc = na4.selectbox("Sector", SECTORS, index=0, key=f"nsc_{aid}_v{v}")
+                    if na5.button("➕", key=f"ah_{aid}_v{v}") and nt:
                         next_hid = max((h.get("_id", 0) for h in holdings), default=-1) + 1
                         holdings.append({"ticker": nt, "shares": ns, "sector": nsc,
-                                         "_id": next_hid})
+                                         "avg_cost": ncb or None, "_id": next_hid})
                         st.session_state.ui_ver = v + 1
                         st.rerun()
 
@@ -547,7 +560,7 @@ def render():
                 "account_type": "Brokerage", "label": "New Account",
                 "balance": 0, "monthly_contribution": 0,
                 "employer_match_pct": 0, "employer_match_ceiling_pct": 0,
-                "_id": next_id, "holdings": [],
+                "cash_usd": 0, "_id": next_id, "holdings": [],
             })
             st.session_state.ui_ver = v + 1
             st.rerun()
