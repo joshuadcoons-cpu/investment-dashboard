@@ -583,6 +583,139 @@ def render():
                             unsafe_allow_html=True,
                         )
 
+    # ═════════════════════════════════════════════════════════════════════════
+    # ETF HOLDINGS OVERLAP
+    # ═════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.subheader("ETF Holdings Overlap")
+    st.caption("Top holdings across your equity ETFs — highlights shared positions")
+
+    @st.cache_data(ttl=86400, show_spinner=False)
+    def _fetch_etf_holdings(etf_tickers: tuple) -> dict:
+        """Fetch top holdings for each ETF (cached 24h)."""
+        result = {}
+        for etf in etf_tickers:
+            try:
+                fd = yf.Ticker(etf).funds_data
+                h = fd.top_holdings
+                if h is not None and len(h) > 0:
+                    result[etf] = {
+                        "holdings": list(h.index),
+                        "weights": {sym: float(w) for sym, w in zip(h.index, h["Holding Percent"])},
+                        "names": {sym: str(n) for sym, n in zip(h.index, h["Name"])},
+                    }
+            except Exception:
+                pass
+        return result
+
+    # Identify ETFs from portfolio (exclude single stocks, crypto, commodities)
+    _SKIP = {"AAPL", "BTC", "ETH", "ADA", "XRP", "DOGE", "IAU", "PDBC", "IBIT", "ETHA"}
+    etf_tickers = []
+    for acct in accounts:
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if tk and tk not in _SKIP and tk not in etf_tickers:
+                etf_tickers.append(tk)
+
+    if etf_tickers:
+        with st.spinner("Fetching ETF holdings data..."):
+            etf_data = _fetch_etf_holdings(tuple(etf_tickers))
+
+        if len(etf_data) >= 2:
+            # Build overlap matrix: which stocks appear in which ETFs
+            all_stocks = {}  # stock -> set of ETFs
+            for etf, data in etf_data.items():
+                for stock in data["holdings"]:
+                    if stock not in all_stocks:
+                        all_stocks[stock] = set()
+                    all_stocks[stock].add(etf)
+
+            # Sort stocks by overlap count (most shared first)
+            sorted_stocks = sorted(all_stocks.items(), key=lambda x: (-len(x[1]), x[0]))
+            overlap_stocks = [(s, etfs) for s, etfs in sorted_stocks if len(etfs) >= 2]
+            unique_stocks  = [(s, etfs) for s, etfs in sorted_stocks if len(etfs) == 1]
+
+            etf_list = sorted(etf_data.keys())
+
+            if overlap_stocks:
+                # Build heatmap data
+                stock_names = [s for s, _ in overlap_stocks[:20]]
+                z_data = []
+                hover_data = []
+                for stock, etfs in overlap_stocks[:20]:
+                    row = []
+                    hover_row = []
+                    for etf in etf_list:
+                        if etf in etfs:
+                            w = etf_data[etf]["weights"].get(stock, 0) * 100
+                            row.append(w)
+                            name = etf_data[etf]["names"].get(stock, stock)
+                            hover_row.append(f"{name}<br>{stock} in {etf}: {w:.1f}%")
+                        else:
+                            row.append(0)
+                            hover_row.append(f"{stock} not in {etf}")
+                    z_data.append(row)
+                    hover_data.append(hover_row)
+
+                fig_overlap = go.Figure(go.Heatmap(
+                    z=z_data,
+                    x=etf_list,
+                    y=stock_names,
+                    hovertext=hover_data,
+                    hovertemplate="%{hovertext}<extra></extra>",
+                    colorscale=[
+                        [0, "rgba(15,23,42,1)"],
+                        [0.01, "rgba(59,130,246,0.15)"],
+                        [0.5, "rgba(59,130,246,0.5)"],
+                        [1.0, BLUE],
+                    ],
+                    showscale=False,
+                    xgap=2, ygap=2,
+                    text=[[f"{v:.1f}%" if v > 0 else "" for v in row] for row in z_data],
+                    texttemplate="%{text}",
+                    textfont=dict(size=10, color="white"),
+                ))
+                fig_overlap.update_layout(**chart_layout(
+                    title=f"Shared Holdings Across {len(etf_list)} ETFs",
+                    height=max(300, len(stock_names) * 28 + 80),
+                    xaxis=dict(side="top", tickangle=0),
+                    yaxis=dict(autorange="reversed"),
+                    margin=dict(l=60, r=20, t=60, b=20),
+                ))
+                st.plotly_chart(fig_overlap, use_container_width=True)
+
+                # Overlap summary
+                st.markdown(
+                    f'<div style="color:#94a3b8;font-size:0.82rem;margin-top:0.5rem">'
+                    f'<b>{len(overlap_stocks)}</b> stocks appear in 2+ ETFs · '
+                    f'<b>{len(unique_stocks)}</b> unique to a single ETF · '
+                    f'<b>{len(all_stocks)}</b> total distinct positions across {len(etf_list)} ETFs</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # Pairwise overlap counts
+                with st.expander("Pairwise ETF Overlap", expanded=False):
+                    pairs = []
+                    for i, e1 in enumerate(etf_list):
+                        s1 = set(etf_data[e1]["holdings"])
+                        for e2 in etf_list[i + 1:]:
+                            s2 = set(etf_data[e2]["holdings"])
+                            shared = s1 & s2
+                            if shared:
+                                pairs.append({
+                                    "ETF Pair": f"{e1} / {e2}",
+                                    "Shared": len(shared),
+                                    "Stocks": ", ".join(sorted(shared)[:8]) + ("..." if len(shared) > 8 else ""),
+                                })
+                    if pairs:
+                        st.dataframe(pd.DataFrame(pairs), use_container_width=True, hide_index=True)
+            else:
+                st.info("No overlapping holdings found between your ETFs.")
+        elif etf_data:
+            st.info("Need at least 2 ETFs with holdings data for overlap analysis.")
+        else:
+            st.info("Could not fetch holdings data for your ETFs.")
+
     # ── HYSA / Emergency Fund Card ──────────────────────────────────────────
     st.divider()
     st.subheader("HYSA / Emergency Fund + Sinking Fund")

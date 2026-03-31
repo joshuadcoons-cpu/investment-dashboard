@@ -359,137 +359,268 @@ def render():
         st.plotly_chart(fig_b, use_container_width=True)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 3 — Retirement Gauge + Action Items
+    # ROW 3 — Cash Flow Waterfall + Sector Allocation
     # ═══════════════════════════════════════════════════════════════════════════
-    g1, g2 = st.columns([1, 1.5])
+    g1, g2 = st.columns([1, 1])
 
-    # ── Retirement Gauge ──────────────────────────────────────────────────────
+    # ── Cash Flow Waterfall ──────────────────────────────────────────────────
     with g1:
-        st.markdown('<p class="section-header">Retirement Readiness</p>', unsafe_allow_html=True)
-        gauge_val    = min(readiness_pct, 150)
-        needle_color = GREEN if readiness_pct >= 100 else (AMBER if readiness_pct >= 70 else RED)
-        fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number+delta",
-            value=gauge_val,
-            number={"suffix": "%", "font": {"size": 28, "color": "#f1f5f9"}},
-            delta={"reference": 100, "suffix": "%",
-                   "increasing": {"color": GREEN}, "decreasing": {"color": RED}},
-            gauge=dict(
-                axis=dict(range=[0, 150], tickcolor="#475569",
-                          tickfont=dict(color="#475569", size=10)),
-                bar=dict(color=needle_color, thickness=0.25),
-                bgcolor="rgba(0,0,0,0)",
-                borderwidth=0,
-                steps=[
-                    dict(range=[0,   70],  color="rgba(239,68,68,0.15)"),
-                    dict(range=[70,  100], color="rgba(245,158,11,0.15)"),
-                    dict(range=[100, 150], color="rgba(16,185,129,0.15)"),
-                ],
-                threshold=dict(line=dict(color="white", width=2),
-                               thickness=0.8, value=100),
-            ),
+        st.markdown('<p class="section-header">Monthly Cash Flow Waterfall</p>', unsafe_allow_html=True)
+
+        wf_labels  = ["Income", "Housing", "Debts", "Variable\nSpending",
+                       "Investments", "Surplus"]
+        wf_values  = [total_monthly_in, -total_housing, -total_debts,
+                      -total_var, -total_inv_contrib, net_cash_flow]
+        wf_measure = ["absolute", "relative", "relative",
+                      "relative", "relative", "total"]
+        wf_text    = [f"${abs(v):,.0f}" for v in wf_values]
+        wf_colors  = [GREEN, RED, RED, RED, AMBER, GREEN if net_cash_flow >= 0 else RED]
+
+        fig_wf = go.Figure(go.Waterfall(
+            x=wf_labels, y=wf_values,
+            measure=wf_measure,
+            text=wf_text,
+            textposition="outside",
+            textfont=dict(size=10, color="#cbd5e1"),
+            connector=dict(line=dict(color="rgba(255,255,255,0.1)", width=1)),
+            increasing=dict(marker=dict(color=GREEN)),
+            decreasing=dict(marker=dict(color=RED)),
+            totals=dict(marker=dict(color=GREEN if net_cash_flow >= 0 else RED)),
+            cliponaxis=False,
         ))
-        fig_gauge.update_layout(**chart_layout(
-            height=260,
-            margin=dict(l=20, r=20, t=20, b=20),
+        fig_wf.update_layout(**chart_layout(
+            height=340,
+            showlegend=False,
+            yaxis=dict(tickprefix="$", tickformat=",.0f"),
+            margin=dict(t=20, b=40),
         ))
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_wf, use_container_width=True)
+
+    # ── Sector Allocation vs Target ──────────────────────────────────────────
+    with g2:
+        st.markdown('<p class="section-header">Sector Allocation vs Target</p>', unsafe_allow_html=True)
+
+        # Map tickers to sectors
+        _TICKER_SECTOR = {
+            "VOO": "US Equity", "VTI": "US Equity", "SCHB": "US Equity",
+            "QQQM": "Technology", "QQQ": "Technology", "VGT": "Technology",
+            "SMH": "Technology", "AAPL": "Technology",
+            "VFH": "Financials", "XLF": "Financials",
+            "VHT": "Healthcare", "XLV": "Healthcare",
+            "VXUS": "International", "IXUS": "International",
+            "VWO": "Emerging Markets", "IEMG": "Emerging Markets",
+            "IAU": "Commodities", "GLD": "Commodities", "PDBC": "Commodities",
+            "IBIT": "Crypto", "ETHA": "Crypto",
+            "BTC": "Crypto", "ETH": "Crypto", "ADA": "Crypto",
+            "XRP": "Crypto", "DOGE": "Crypto",
+            "VUG": "US Equity", "SCHG": "US Equity",
+        }
+
+        live_prices = st.session_state.get("live_prices", {})
+        sector_values = {}
+        for acct in a["investment_accounts"]:
+            for h in acct.get("holdings", []):
+                tk = h.get("ticker")
+                if not tk:
+                    continue
+                price = live_prices.get(tk)
+                if not price:
+                    continue
+                sector = _TICKER_SECTOR.get(tk, h.get("sector", "Other"))
+                if sector == "Unknown":
+                    sector = "Other"
+                sector_values[sector] = sector_values.get(sector, 0) + h["shares"] * price
+
+        target = a.get("target_allocation") or {
+            "US Equity": 35, "Technology": 15, "International": 10,
+            "Emerging Markets": 5, "Commodities": 10, "Crypto": 10,
+            "Financials": 5, "Healthcare": 5, "Other": 5,
+        }
+
+        total_portfolio = sum(sector_values.values()) or 1
+        all_sectors = sorted(set(list(target.keys()) + list(sector_values.keys())))
+
+        current_pcts = [sector_values.get(s, 0) / total_portfolio * 100 for s in all_sectors]
+        target_pcts  = [target.get(s, 0) for s in all_sectors]
+
+        fig_alloc = go.Figure()
+        fig_alloc.add_trace(go.Bar(
+            y=all_sectors, x=current_pcts, orientation="h",
+            name="Current", marker=dict(color=BLUE),
+            text=[f"{v:.1f}%" for v in current_pcts],
+            textposition="outside", textfont=dict(size=9, color="#94a3b8"),
+            cliponaxis=False,
+        ))
+        fig_alloc.add_trace(go.Bar(
+            y=all_sectors, x=target_pcts, orientation="h",
+            name="Target", marker=dict(color="rgba(255,255,255,0.15)"),
+            text=[f"{v:.0f}%" for v in target_pcts],
+            textposition="outside", textfont=dict(size=9, color="#475569"),
+            cliponaxis=False,
+        ))
+        fig_alloc.update_layout(**chart_layout(
+            height=340,
+            barmode="group",
+            xaxis=dict(ticksuffix="%"),
+            legend=dict(orientation="h", x=0.5, xanchor="center", y=1.05),
+            margin=dict(t=30, b=20),
+        ))
+        st.plotly_chart(fig_alloc, use_container_width=True)
+
+    # ═══════════════════════════════════════════════════════════════════════════
+    # ROW 4 — Debt Payoff Timeline + Investment Return Attribution
+    # ═══════════════════════════════════════════════════════════════════════════
+    d1, d2 = st.columns([1, 1])
+
+    # ── Debt Payoff Timeline ─────────────────────────────────────────────────
+    with d1:
+        st.markdown('<p class="section-header">Debt Payoff Timeline</p>', unsafe_allow_html=True)
+
+        # Mortgage
+        orig_mortgage = a["loan_original_amount"]
+        mortgage_paid = orig_mortgage - status["current_balance"]
+        mortgage_pct  = (mortgage_paid / orig_mortgage * 100) if orig_mortgage else 0
+        payoff_date   = status["payoff_date"]
+        years_left_m  = status["months_remaining"] / 12
+
         st.markdown(
-            f'<div style="text-align:center;color:#64748b;font-size:0.8rem;margin-top:-0.5rem">'
-            f'<b>{years_to_ret} yrs</b> to retirement · target age {a["retirement_age"]}</div>',
+            f'<div style="margin-bottom:1.2rem">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
+            f'<span style="color:#e2e8f0;font-size:0.9rem;font-weight:700">Mortgage</span>'
+            f'<span style="color:#64748b;font-size:0.78rem">'
+            f'${status["current_balance"]:,.0f} remaining · {years_left_m:.1f} yrs to go</span>'
+            f'</div>'
+            f'<div style="background:#0f172a;border-radius:6px;height:20px;overflow:hidden;position:relative">'
+            f'<div style="width:{mortgage_pct:.1f}%;height:100%;background:linear-gradient(90deg,{GREEN},{CYAN});'
+            f'border-radius:6px;display:flex;align-items:center;justify-content:center;'
+            f'font-size:0.7rem;color:white;font-weight:700">'
+            f'{mortgage_pct:.1f}% paid</div></div>'
+            f'<div style="display:flex;justify-content:space-between;color:#475569;'
+            f'font-size:0.72rem;margin-top:4px">'
+            f'<span>${mortgage_paid:,.0f} of ${orig_mortgage:,.0f}</span>'
+            f'<span>Payoff: {payoff_date.strftime("%b %Y")}</span>'
+            f'</div></div>',
             unsafe_allow_html=True,
         )
 
-        if readiness_pct >= 100:
-            st.success(f"✅ On track for retirement at {a['retirement_age']}")
-        elif readiness_pct >= 70:
-            st.warning("⚠️ Close — boost contributions to close the gap")
-        else:
-            st.error("❌ Significant gap — review projections tab for options")
-
-    # ── Action Items ──────────────────────────────────────────────────────────
-    with g2:
-        st.markdown('<p class="section-header">Action Items & Alerts</p>', unsafe_allow_html=True)
-
-        alerts = []
-
-        # Emergency fund (dedicated bucket vs total liquid)
-        ef_target    = total_exp * a["emergency_fund_target_months"]
-        ef_mo_dedic  = a["emergency_fund_balance"] / total_exp if total_exp else 0
-        if a["emergency_fund_balance"] >= ef_target:
-            alerts.append(("green", "🛡️ Emergency Fund",
-                           f"Fully funded — {ef_mo_dedic:.1f} mo dedicated + "
-                           f"{ef_months - ef_mo_dedic:.1f} mo in other savings"))
-        else:
-            gap = ef_target - a["emergency_fund_balance"]
-            alerts.append(("amber", "🛡️ Emergency Fund",
-                           f"${gap:,.0f} short of {a['emergency_fund_target_months']}-month goal "
-                           f"({ef_mo_dedic:.1f} mo dedicated, {ef_months:.1f} mo total liquid)"))
-
-
-        # 401k match capture
-        for acct in a["investment_accounts"]:
-            if acct["account_type"] in ["401k", "Roth 401k"] and acct.get("employer_match_pct", 0) > 0:
-                cap     = a["gross_income"] * acct["employer_match_ceiling_pct"] / 100 / 12
-                matched = min(acct["monthly_contribution"], cap) * acct["employer_match_pct"] / 100
-                if matched == 0:
-                    alerts.append(("red", f"🤝 {acct['label']}",
-                                  f"Not capturing match — contribute ≥ ${cap:,.0f}/mo"))
-                else:
-                    alerts.append(("green", f"🤝 {acct['label']}",
-                                  f"Capturing ${matched:,.0f}/mo employer match"))
-
-        # IRS contribution room (YTD-aware, skip flagged accounts)
-        from utils.calculations import ACCOUNT_LIMITS
-        _today_d = date.today()
-        _months_in = (_today_d - date(_today_d.year, 1, 1)).days / 365 * 12
-
-        for acct in a["investment_accounts"]:
-            if acct.get("skip_contribution"):
-                continue
-            limits = ACCOUNT_LIMITS.get(acct["account_type"], {})
-            limit  = limits.get("catchup" if a["age"] >= 50 else "base")
-            if limit:
-                ytd  = acct.get("ytd_contributed",
-                                acct["monthly_contribution"] * _months_in)
-                room = max(0, limit - ytd)
-                if room < 1:
-                    alerts.append(("green", f"📈 {acct['label']}",
-                                  f"Maxed for {_today_d.year} at ${limit:,.0f} ✅"))
-                elif ytd > 0:
-                    pct = ytd / limit * 100
-                    alerts.append(("blue", f"📈 {acct['label']}",
-                                  f"${ytd:,.0f} of ${limit:,.0f} YTD ({pct:.0f}%) — "
-                                  f"${room:,.0f} remaining"))
-                else:
-                    alerts.append(("amber", f"📈 {acct['label']}",
-                                  f"No contributions yet (IRS limit: ${limit:,.0f}/yr)"))
-
-        # High-rate debt
+        # Other debts
         for d in a["other_debts"]:
-            if d["rate_pct"] > 7 and d["balance"] > 0:
-                alerts.append(("red", f"💳 {d['name']}",
-                              f"High-rate debt at {d['rate_pct']:.1f}% — consider paying down"))
+            if d["balance"] <= 0:
+                continue
+            # Estimate original balance from payment schedule
+            # Simple: assume original = balance + total paid so far (rough)
+            rate_mo = d["rate_pct"] / 100 / 12
+            if rate_mo > 0 and d["monthly_payment"] > 0:
+                # Months to payoff
+                if d["monthly_payment"] <= d["balance"] * rate_mo:
+                    months_left = 999
+                else:
+                    import math as _math
+                    months_left = _math.ceil(
+                        -_math.log(1 - d["balance"] * rate_mo / d["monthly_payment"])
+                        / _math.log(1 + rate_mo)
+                    )
+                years_left_d = months_left / 12
+                from dateutil.relativedelta import relativedelta
+                payoff_d = today + relativedelta(months=months_left)
+            else:
+                months_left = (d["balance"] / d["monthly_payment"]) if d["monthly_payment"] else 999
+                years_left_d = months_left / 12
+                payoff_d = today
 
-        # Monthly cash flow
-        if net_cash_flow < 0:
-            alerts.append(("red", "💰 Cash Flow",
-                          f"Deficit of ${abs(net_cash_flow):,.0f}/mo — expenses exceed income"))
-        elif net_cash_flow > 1000:
-            alerts.append(("blue", "💰 Cash Flow",
-                          f"${net_cash_flow:,.0f}/mo unallocated — consider investing surplus"))
+            # Visual: we don't know original so show remaining timeline
+            bar_pct = min(100, max(5, 100 - (months_left / (months_left + 12)) * 100))
 
-        for badge, title, msg in alerts[:8]:
             st.markdown(
-                f'<div style="display:flex;align-items:flex-start;gap:10px;'
-                f'background:#0f172a;border:1px solid rgba(255,255,255,0.07);'
-                f'border-radius:10px;padding:0.75rem 1rem;margin-bottom:0.5rem;">'
-                f'<div><div style="margin-bottom:2px">'
-                f'<span class="badge-{badge}">{title}</span></div>'
-                f'<div style="color:#94a3b8;font-size:0.8rem;line-height:1.4">{msg}</div>'
+                f'<div style="margin-bottom:1.2rem">'
+                f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
+                f'<span style="color:#e2e8f0;font-size:0.9rem;font-weight:700">{d["name"]}</span>'
+                f'<span style="color:#64748b;font-size:0.78rem">'
+                f'${d["balance"]:,.0f} at {d["rate_pct"]}% · {years_left_d:.1f} yrs left</span>'
+                f'</div>'
+                f'<div style="background:#0f172a;border-radius:6px;height:16px;overflow:hidden">'
+                f'<div style="width:{100 - months_left / max(months_left + 60, 1) * 100:.0f}%;height:100%;'
+                f'background:linear-gradient(90deg,{AMBER},{GREEN});border-radius:6px;'
+                f'display:flex;align-items:center;justify-content:center;'
+                f'font-size:0.68rem;color:white;font-weight:700">'
+                f'${d["monthly_payment"]:,.0f}/mo</div></div>'
+                f'<div style="display:flex;justify-content:space-between;color:#475569;'
+                f'font-size:0.72rem;margin-top:4px">'
+                f'<span>${d["monthly_payment"]:,.0f}/mo payment</span>'
+                f'<span>Payoff: ~{payoff_d.strftime("%b %Y")}</span>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
+
+        if not a["other_debts"]:
+            st.markdown(
+                f'<div style="color:{GREEN};font-size:0.85rem;margin-top:0.5rem">'
+                f'No other debts — only the mortgage remains.</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── Investment Return Attribution ────────────────────────────────────────
+    with d2:
+        st.markdown('<p class="section-header">Investment Return Attribution</p>', unsafe_allow_html=True)
+
+        total_cost_basis = 0
+        for acct in a["investment_accounts"]:
+            cash = acct.get("cash_usd", 0)
+            total_cost_basis += cash
+            for h in acct.get("holdings", []):
+                if h.get("avg_cost") is not None:
+                    total_cost_basis += h["shares"] * h["avg_cost"]
+
+        market_gains = total_investments - total_cost_basis
+
+        cb_pct = (total_cost_basis / total_investments * 100) if total_investments else 0
+        mg_pct = (market_gains / total_investments * 100) if total_investments else 0
+        gain_on_cost = (market_gains / total_cost_basis * 100) if total_cost_basis else 0
+
+        # Stacked horizontal bar
+        fig_attr = go.Figure()
+        fig_attr.add_trace(go.Bar(
+            y=["Portfolio"],
+            x=[total_cost_basis],
+            orientation="h",
+            name="Your Contributions",
+            marker=dict(color=BLUE),
+            text=[f"${total_cost_basis:,.0f}"],
+            textposition="inside",
+            textfont=dict(size=12, color="white"),
+            hovertemplate="Contributions: $%{x:,.0f}<extra></extra>",
+        ))
+        fig_attr.add_trace(go.Bar(
+            y=["Portfolio"],
+            x=[market_gains],
+            orientation="h",
+            name="Market Gains" if market_gains >= 0 else "Market Losses",
+            marker=dict(color=GREEN if market_gains >= 0 else RED),
+            text=[f"${market_gains:+,.0f}"],
+            textposition="inside",
+            textfont=dict(size=12, color="white"),
+            hovertemplate="Market gains: $%{x:+,.0f}<extra></extra>",
+        ))
+        fig_attr.update_layout(**chart_layout(
+            height=120,
+            barmode="stack",
+            showlegend=True,
+            legend=dict(orientation="h", x=0.5, xanchor="center", y=1.15),
+            xaxis=dict(tickprefix="$", tickformat=",.0s"),
+            yaxis=dict(visible=False),
+            margin=dict(t=35, b=10, l=10, r=10),
+        ))
+        st.plotly_chart(fig_attr, use_container_width=True)
+
+        # Attribution stats
+        a1, a2, a3 = st.columns(3)
+        a1.metric("Contributions", f"${total_cost_basis:,.0f}",
+                  delta=f"{cb_pct:.0f}% of portfolio", delta_color="off")
+        a2.metric("Market Gains", f"${market_gains:+,.0f}",
+                  delta=f"{mg_pct:.0f}% of portfolio",
+                  delta_color="normal" if market_gains >= 0 else "inverse")
+        a3.metric("Return on Cost", f"{gain_on_cost:+.1f}%",
+                  delta="since inception", delta_color="off")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MILESTONE TRACKER
