@@ -604,11 +604,10 @@ def render():
         fig_attr.update_layout(**chart_layout(
             height=120,
             barmode="stack",
-            showlegend=True,
-            legend=dict(orientation="h", x=0.5, xanchor="center", y=1.15),
+            showlegend=False,
             xaxis=dict(tickprefix="$", tickformat=",.0s"),
             yaxis=dict(visible=False),
-            margin=dict(t=35, b=10, l=10, r=10),
+            margin=dict(t=10, b=10, l=10, r=10),
         ))
         st.plotly_chart(fig_attr, use_container_width=True)
 
