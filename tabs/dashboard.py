@@ -461,9 +461,9 @@ def render():
         fig_alloc.update_layout(**chart_layout(
             height=340,
             barmode="group",
+            showlegend=False,
             xaxis=dict(ticksuffix="%"),
-            legend=dict(orientation="h", x=0.5, xanchor="center", y=1.05),
-            margin=dict(t=30, b=20),
+            margin=dict(t=10, b=20),
         ))
         st.plotly_chart(fig_alloc, use_container_width=True)
 
@@ -488,17 +488,16 @@ def render():
             f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
             f'<span style="color:#e2e8f0;font-size:0.9rem;font-weight:700">Mortgage</span>'
             f'<span style="color:#64748b;font-size:0.78rem">'
-            f'${status["current_balance"]:,.0f} remaining · {years_left_m:.1f} yrs to go</span>'
+            f'{years_left_m:.1f} yrs to go · payoff {payoff_date.strftime("%b %Y")}</span>'
             f'</div>'
-            f'<div style="background:#0f172a;border-radius:6px;height:20px;overflow:hidden;position:relative">'
-            f'<div style="width:{mortgage_pct:.1f}%;height:100%;background:linear-gradient(90deg,{GREEN},{CYAN});'
-            f'border-radius:6px;display:flex;align-items:center;justify-content:center;'
-            f'font-size:0.7rem;color:white;font-weight:700">'
-            f'{mortgage_pct:.1f}% paid</div></div>'
-            f'<div style="display:flex;justify-content:space-between;color:#475569;'
-            f'font-size:0.72rem;margin-top:4px">'
-            f'<span>${mortgage_paid:,.0f} of ${orig_mortgage:,.0f}</span>'
-            f'<span>Payoff: {payoff_date.strftime("%b %Y")}</span>'
+            f'<div style="background:#0f172a;border-radius:6px;height:16px;overflow:hidden;position:relative">'
+            f'<div style="width:{max(mortgage_pct, 0.5):.2f}%;height:100%;'
+            f'background:linear-gradient(90deg,{GREEN},{CYAN});border-radius:6px"></div></div>'
+            f'<div style="display:flex;justify-content:space-between;margin-top:5px">'
+            f'<span style="color:{GREEN};font-size:0.78rem;font-weight:700">'
+            f'Paid: ${mortgage_paid:,.0f} ({mortgage_pct:.2f}%)</span>'
+            f'<span style="color:#94a3b8;font-size:0.78rem">'
+            f'Remaining: ${status["current_balance"]:,.0f}</span>'
             f'</div></div>',
             unsafe_allow_html=True,
         )
