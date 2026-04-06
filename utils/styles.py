@@ -14,6 +14,39 @@ MUTED  = "#475569"
 
 CHART_COLORS = [BLUE, GREEN, PURPLE, AMBER, CYAN, RED, "#ec4899", "#14b8a6", "#f97316"]
 
+
+def theme_colors() -> dict:
+    """Return a dict of theme-appropriate colors for Plotly charts & inline HTML.
+
+    Call once at the top of each tab's render() function:
+        tc = theme_colors()
+    Then use tc["text"], tc["muted"], tc["card"], etc.
+    """
+    light = st.session_state.get("theme") == "light"
+    return {
+        # Text hierarchy (for Plotly textfont, annotations, labels)
+        "text":       "#1e293b" if light else "#e2e8f0",
+        "bright":     "#0f172a" if light else "#f1f5f9",
+        "secondary":  "#334155" if light else "#cbd5e1",
+        "muted":      "#64748b" if light else "#94a3b8",
+        "faint":      "#94a3b8" if light else "#64748b",
+        "subtle":     "#475569" if light else "#475569",
+        # Backgrounds
+        "card":       "#ffffff" if light else "#0f172a",
+        "app":        "#f8fafc" if light else "#020817",
+        "input":      "#f1f5f9" if light else "#111827",
+        # Borders & lines
+        "border":     "rgba(0,0,0,0.10)" if light else "rgba(255,255,255,0.07)",
+        "grid":       "rgba(0,0,0,0.06)" if light else "rgba(255,255,255,0.05)",
+        "zeroline":   "rgba(0,0,0,0.15)" if light else "rgba(255,255,255,0.15)",
+        "connector":  "rgba(0,0,0,0.10)" if light else "rgba(255,255,255,0.10)",
+        # Chart-specific
+        "pie_border": "#ffffff" if light else "#020817",
+        "target_bar": "rgba(0,0,0,0.10)" if light else "rgba(255,255,255,0.15)",
+        "heatmap_bg": "rgba(248,250,252,1)" if light else "rgba(15,23,42,1)",
+        "sankey_link":"rgba(0,0,0,0.06)" if light else "rgba(255,255,255,0.06)",
+    }
+
 # ── Base Plotly theme (nested dicts — use chart_layout() to merge safely) ─────
 _BASE = dict(
     paper_bgcolor="rgba(0,0,0,0)",

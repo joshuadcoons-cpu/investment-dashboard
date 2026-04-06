@@ -7,7 +7,7 @@ from utils.calculations import (
     ACCOUNT_LIMITS, calc_federal_tax, calc_fica, calc_take_home_monthly,
     calc_monthly_payment, build_amortization, get_loan_status,
 )
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, theme_colors
 
 SECTORS = [
     "Technology", "Healthcare", "Financials", "Consumer Cyclical",
@@ -50,6 +50,7 @@ def _fmt_k(v):
 
 def render():
     a = st.session_state.assumptions
+    tc = theme_colors()
 
     # ── Header row with reset button ─────────────────────────────────────────
     hdr_l, hdr_r = st.columns([5, 1])
@@ -399,7 +400,7 @@ def render():
                 else:
                     lc.markdown(
                         f'<div style="padding-top:4px;font-size:0.85rem;font-weight:600;'
-                        f'color:#e2e8f0">{bucket_name}</div>',
+                        f'color:{tc["text"]}">{bucket_name}</div>',
                         unsafe_allow_html=True)
 
                 status_text = ("Over limit!" if over
@@ -408,11 +409,11 @@ def render():
                 rc.markdown(
                     f'<div style="margin-top:4px">'
                     f'<div style="display:flex;justify-content:space-between;'
-                    f'color:#94a3b8;font-size:0.75rem;margin-bottom:3px">'
+                    f'color:{tc["muted"]};font-size:0.75rem;margin-bottom:3px">'
                     f'<span>${combined_ytd:,.0f} / ${annual_limit:,.0f} YTD</span>'
                     f'<span style="color:{bar_color};font-weight:600">{status_text}</span>'
                     f'</div>'
-                    f'<div style="background:#1e293b;border-radius:4px;height:8px;overflow:hidden">'
+                    f'<div style="background:{tc["card"]};border-radius:4px;height:8px;overflow:hidden">'
                     f'<div style="background:{bar_color};width:{min(pct_used, 100):.1f}%;'
                     f'height:8px;border-radius:4px"></div></div></div>',
                     unsafe_allow_html=True,
@@ -436,7 +437,7 @@ def render():
             acct_color = {
                 "401k": BLUE, "Roth 401k": PURPLE, "Trad IRA": AMBER,
                 "Roth IRA": GREEN, "Brokerage": CYAN, "HSA": "#f97316", "Crypto": AMBER,
-            }.get(acct.get("account_type", ""), "#475569")
+            }.get(acct.get("account_type", ""), tc["subtle"])
 
             with st.container(border=True):
                 # Header row: label + type badge + balance + remove

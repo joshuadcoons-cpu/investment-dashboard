@@ -5,11 +5,12 @@ from datetime import date
 from utils.calculations import (
     build_amortization, get_loan_status, calc_monthly_payment,
 )
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout, theme_colors
 from utils.database import log_net_worth, get_net_worth_history
 
 
 def render():
+    tc = theme_colors()
     a = st.session_state.assumptions
     st.header("🏦 Net Worth Overview")
 
@@ -98,7 +99,7 @@ def render():
         marker=dict(color=bar_colors, line=dict(width=0)),
         text=bar_text,
         textposition="outside",
-        textfont=dict(size=12, color="#cbd5e1"),
+        textfont=dict(size=12, color=tc["secondary"]),
         cliponaxis=False,
     ))
 
@@ -113,7 +114,7 @@ def render():
             tickformat=",.0s",
             zeroline=True,
             zerolinewidth=2,
-            zerolinecolor="rgba(255,255,255,0.25)",
+            zerolinecolor=tc["zeroline"],
         ),
     ))
     st.plotly_chart(fig_div, use_container_width=True)
@@ -140,7 +141,7 @@ def render():
     # Filter to positive values
     comp_labels = [k for k, v in comp.items() if v > 0]
     comp_values = [v for v in comp.values() if v > 0]
-    colors      = [comp_colors.get(k, "#475569") for k in comp_labels]
+    colors      = [comp_colors.get(k, tc["subtle"]) for k in comp_labels]
 
     if other_debt_total > 0:
         comp_labels.append("Other Debt")
@@ -151,7 +152,7 @@ def render():
         labels=comp_labels,
         values=comp_values,
         hole=0.5,
-        marker=dict(colors=colors, line=dict(color="#020817", width=2)),
+        marker=dict(colors=colors, line=dict(color=tc["pie_border"], width=2)),
         textinfo="label+percent",
         textposition="inside",
         insidetextorientation="horizontal",
@@ -162,10 +163,10 @@ def render():
 
     nw_display = f"${net_worth/1_000_000:.2f}M" if net_worth >= 1_000_000 else f"${net_worth/1000:.0f}k"
     fig_donut.add_annotation(
-        text=f"<b>{nw_display}</b><br><span style='font-size:10px;color:#64748b'>net worth</span>",
+        text=f"<b>{nw_display}</b><br><span style='font-size:10px;color:{tc['faint']}'>net worth</span>",
         x=0.5, y=0.5, xref="paper", yref="paper",
         showarrow=False,
-        font=dict(size=22, color="#f1f5f9", family="Barlow Condensed"),
+        font=dict(size=22, color=tc["bright"], family="Barlow Condensed"),
     )
     fig_donut.update_layout(**chart_layout(
         title="Net Worth Composition",

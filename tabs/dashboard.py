@@ -6,11 +6,12 @@ from datetime import date
 from utils.calculations import (
     calc_monthly_payment, build_amortization, get_loan_status,
 )
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout, theme_colors
 
 
 def render():
     a = st.session_state.assumptions
+    tc = theme_colors()
 
     # ── Shared calculations ───────────────────────────────────────────────────
     amort  = build_amortization(
@@ -259,7 +260,7 @@ def render():
             marker=dict(color=div_colors, line=dict(width=0)),
             text=bar_text,
             textposition=text_pos,
-            textfont=dict(size=10, color="#e2e8f0"),
+            textfont=dict(size=10, color=tc["text"]),
             cliponaxis=False,
             hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
         ))
@@ -271,7 +272,7 @@ def render():
                 showticklabels=False,
                 zeroline=True,
                 zerolinewidth=2,
-                zerolinecolor="rgba(255,255,255,0.3)",
+                zerolinecolor=tc["zeroline"],
             ),
         ))
         st.plotly_chart(fig_nw, use_container_width=True)
@@ -303,14 +304,14 @@ def render():
                 labels=alloc_labels,
                 values=alloc_values,
                 hole=0.62,
-                marker=dict(colors=alloc_colors, line=dict(color="#020817", width=3)),
+                marker=dict(colors=alloc_colors, line=dict(color=tc["pie_border"], width=3)),
                 textinfo="none",
                 hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
             ))
             fig_donut.add_annotation(
                 text=f"<b>${all_assets_total/1e3:.0f}k</b>",
                 x=0.5, y=0.5, showarrow=False,
-                font=dict(size=18, color="#f1f5f9"),
+                font=dict(size=18, color=tc["bright"]),
             )
             fig_donut.update_layout(**chart_layout(
                 height=380,
@@ -319,7 +320,7 @@ def render():
                     orientation="h",
                     x=0.5, y=-0.15,
                     xanchor="center",
-                    font=dict(size=10, color="#e2e8f0"),
+                    font=dict(size=10, color=tc["text"]),
                     itemwidth=30,
                 ),
                 margin=dict(t=10, b=80),
@@ -340,7 +341,7 @@ def render():
         b_df = b_df[b_df["Amount"] > 0].sort_values("Amount")
         bar_colors = [BLUE if cat == "Housing" else
                       GREEN if cat == "Investments" else
-                      "#475569" for cat in b_df["Category"]]
+                      tc["subtle"] for cat in b_df["Category"]]
         b_labels = [f"${v:,.0f}" for v in b_df["Amount"]]
         fig_b = go.Figure(go.Bar(
             y=b_df["Category"], x=b_df["Amount"],
@@ -348,7 +349,7 @@ def render():
             marker=dict(color=bar_colors, line=dict(width=0)),
             text=b_labels,
             textposition="outside",
-            textfont=dict(size=11, color="#cbd5e1"),
+            textfont=dict(size=11, color=tc["secondary"]),
             cliponaxis=False,
         ))
         fig_b.update_layout(**chart_layout(
@@ -381,8 +382,8 @@ def render():
             measure=wf_measure,
             text=wf_text,
             textposition="outside",
-            textfont=dict(size=10, color="#cbd5e1"),
-            connector=dict(line=dict(color="rgba(255,255,255,0.1)", width=1)),
+            textfont=dict(size=10, color=tc["secondary"]),
+            connector=dict(line=dict(color=tc["connector"], width=1)),
             increasing=dict(marker=dict(color=GREEN)),
             decreasing=dict(marker=dict(color=RED)),
             totals=dict(marker=dict(color=GREEN if net_cash_flow >= 0 else RED)),
@@ -448,14 +449,14 @@ def render():
             y=all_sectors, x=current_pcts, orientation="h",
             name="Current", marker=dict(color=BLUE),
             text=[f"{v:.1f}%" for v in current_pcts],
-            textposition="outside", textfont=dict(size=9, color="#94a3b8"),
+            textposition="outside", textfont=dict(size=9, color=tc["muted"]),
             cliponaxis=False,
         ))
         fig_alloc.add_trace(go.Bar(
             y=all_sectors, x=target_pcts, orientation="h",
-            name="Target", marker=dict(color="rgba(255,255,255,0.15)"),
+            name="Target", marker=dict(color=tc["target_bar"]),
             text=[f"{v:.0f}%" for v in target_pcts],
-            textposition="outside", textfont=dict(size=9, color="#475569"),
+            textposition="outside", textfont=dict(size=9, color=tc["faint"]),
             cliponaxis=False,
         ))
         fig_alloc.update_layout(**chart_layout(
@@ -635,7 +636,7 @@ def render():
                 pct       = min(net_worth / ms_target * 100, 100) if ms_target else 0
                 completed = net_worth >= ms_target
                 future    = ms_age > current_age and not completed
-                bar_color = GREEN if completed else (BLUE if not future else "#475569")
+                bar_color = GREEN if completed else (BLUE if not future else tc["subtle"])
                 label     = f"Age {ms_age} — ${ms_target/1e6:.2f}M" if ms_target >= 1e6 else f"Age {ms_age} — ${ms_target:,.0f}"
                 sub       = f'<span style="color:#64748b;font-size:0.72rem"> · {ms_event}</span>' if ms_event else ""
                 st.markdown(

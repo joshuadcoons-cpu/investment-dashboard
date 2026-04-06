@@ -4,10 +4,11 @@ import plotly.express as px
 import pandas as pd
 from datetime import date
 from utils.calculations import calc_monthly_payment, build_amortization, get_loan_status
-from utils.styles import BLUE, GREEN, RED, AMBER, chart_layout
+from utils.styles import BLUE, GREEN, RED, AMBER, chart_layout, theme_colors
 
 
 def render():
+    tc = theme_colors()
     a = st.session_state.assumptions
     st.header("🏡 Home & Mortgage")
 
@@ -88,7 +89,7 @@ def render():
             hole=0.52,
             marker=dict(
                 colors=[BLUE, AMBER, GREEN, "#f97316", "#06b6d4"],
-                line=dict(color="#020817", width=3),
+                line=dict(color=tc["pie_border"], width=3),
             ),
             textinfo="percent",
             textposition="inside",
@@ -125,9 +126,9 @@ def render():
             fillcolor="rgba(239,68,68,0.12)", line=dict(color=RED, width=2),
         ))
         fig.add_vline(x=today.year, line_dash="dash",
-                      line_color="rgba(255,255,255,0.35)",
+                      line_color=tc["zeroline"],
                       annotation_text="Today",
-                      annotation_font=dict(color="#94a3b8", size=11),
+                      annotation_font=dict(color=tc["muted"], size=11),
                       annotation_position="top right")
         fig.update_layout(**chart_layout(
             yaxis=dict(tickprefix="$", tickformat=",.0f", title="Amount ($)"),

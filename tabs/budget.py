@@ -3,10 +3,11 @@ import plotly.graph_objects as go
 import pandas as pd
 from datetime import date
 from utils.calculations import calc_monthly_payment
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout, theme_colors
 
 
 def render():
+    tc = theme_colors()
     a = st.session_state.assumptions
     st.header("💵 Monthly Budget")
 
@@ -107,7 +108,7 @@ def render():
             labels=p_labels,
             values=p_values,
             hole=0.45,
-            marker=dict(colors=pie_colors, line=dict(color="#020817", width=2)),
+            marker=dict(colors=pie_colors, line=dict(color=tc["pie_border"], width=2)),
             textinfo="label+percent",
             textposition="inside",
             insidetextorientation="horizontal",
@@ -116,10 +117,10 @@ def render():
             sort=False,
         ))
         fig_pie.add_annotation(
-            text=f"<b>${annual_total/1000:,.0f}k</b><br><span style='font-size:10px;color:#64748b'>per year</span>",
+            text=f"<b>${annual_total/1000:,.0f}k</b><br><span style='font-size:10px;color:{tc['faint']}'>per year</span>",
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False,
-            font=dict(size=20, color="#f1f5f9", family="Barlow Condensed"),
+            font=dict(size=20, color=tc["bright"], family="Barlow Condensed"),
         )
         fig_pie.update_layout(**chart_layout(
             title="Annual Budget Breakdown",
@@ -147,7 +148,7 @@ def render():
             ("Housing",     total_housing,      RED),
             ("Living",      total_variable,     AMBER),
             ("Investments", total_investments,   PURPLE),
-            ("Debt",        total_debt_pmts,     "#64748b"),
+            ("Debt",        total_debt_pmts,     tc["faint"]),
         ]
         for label, amt, color in dest_items:
             if amt > 0:
@@ -175,7 +176,7 @@ def render():
             node=dict(
                 pad=18,
                 thickness=22,
-                line=dict(color="rgba(255,255,255,0.06)", width=0.5),
+                line=dict(color=tc["sankey_link"], width=0.5),
                 label=node_labels,
                 color=node_colors,
             ),
@@ -252,7 +253,7 @@ def render():
         marker_color=bar_colors,
         text=[f"${s/1000:,.0f}k" for s in annual_surplus],
         textposition="outside",
-        textfont=dict(size=11, color="white"),
+        textfont=dict(size=11, color=tc["text"]),
         hovertemplate="%{x}<br>$%{y:,.0f}<extra></extra>",
         cliponaxis=False,
     ))

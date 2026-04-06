@@ -1,6 +1,6 @@
 import streamlit as st
 import plotly.graph_objects as go
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout, theme_colors
 from utils.calculations import calc_take_home_monthly, calc_monthly_payment
 
 # ── Colour palette ─────────────────────────────────────────────────────────────
@@ -24,10 +24,11 @@ def _rgba(hex_color: str, alpha: float = 0.33) -> str:
 
 def render():
     a = st.session_state.assumptions
+    tc = theme_colors()
 
     st.markdown('<p class="section-header">Annual Capital Flow</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p style="color:#64748b;font-size:0.85rem;margin-top:-0.5rem;margin-bottom:1rem">'
+        f'<p style="color:{tc["faint"]};font-size:0.85rem;margin-top:-0.5rem;margin-bottom:1rem">'
         'Household income allocation, tax efficiency, and wealth-building pipeline</p>',
         unsafe_allow_html=True,
     )
@@ -294,7 +295,7 @@ def render():
         node=dict(
             pad=20,
             thickness=18,
-            line=dict(color="#020817", width=0.5),
+            line=dict(color=tc["pie_border"], width=0.5),
             label=labels,
             color=colors,
             x=x_pos,
@@ -384,7 +385,7 @@ def render():
             <div class="kpi-sub">of gross household income</div>
         </div>""", unsafe_allow_html=True)
 
-    pc_color = GREEN if passive_coverage >= 100 else (AMBER if passive_coverage >= 50 else "#64748b")
+    pc_color = GREEN if passive_coverage >= 100 else (AMBER if passive_coverage >= 50 else tc["faint"])
     with k6:
         st.markdown(f"""
         <div class="kpi-card" style="border-top:3px solid {pc_color}">
@@ -406,9 +407,9 @@ def render():
 
     with m1:
         st.markdown(f"""
-        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);
+        <div style="background:{tc["card"]};border:1px solid {tc["border"]};
                     border-radius:10px;padding:0.85rem 1rem;">
-            <div style="color:#475569;font-size:0.6rem;font-weight:700;
+            <div style="color:{tc["subtle"]};font-size:0.6rem;font-weight:700;
                         text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.6rem">
                 Income Composition</div>
             <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:0.5rem">
@@ -417,18 +418,18 @@ def render():
                 <div style="width:{match_pct_}%;background:{CYAN}"></div>
             </div>
             <div style="display:flex;gap:0.7rem;flex-wrap:wrap">
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{BLUE}">●</span> W2 {w2_pct:.0f}%</span>
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{GREEN}">●</span> Passive {passive_pct:.0f}%</span>
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{CYAN}">●</span> Match {match_pct_:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{BLUE}">●</span> W2 {w2_pct:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{GREEN}">●</span> Passive {passive_pct:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{CYAN}">●</span> Match {match_pct_:.0f}%</span>
             </div>
         </div>""", unsafe_allow_html=True)
 
     # ── Investment Tax Efficiency ──────────────────────────────────────────
     with m2:
         st.markdown(f"""
-        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);
+        <div style="background:{tc["card"]};border:1px solid {tc["border"]};
                     border-radius:10px;padding:0.85rem 1rem;">
-            <div style="color:#475569;font-size:0.6rem;font-weight:700;
+            <div style="color:{tc["subtle"]};font-size:0.6rem;font-weight:700;
                         text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.6rem">
                 Investment Tax Efficiency</div>
             <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:0.5rem">
@@ -436,8 +437,8 @@ def render():
                 <div style="width:{100-tax_adv_pct}%;background:{AMBER}"></div>
             </div>
             <div style="display:flex;gap:0.7rem;flex-wrap:wrap">
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{PURPLE}">●</span> Tax-advantaged {tax_adv_pct:.0f}%</span>
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{AMBER}">●</span> Taxable {100-tax_adv_pct:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{PURPLE}">●</span> Tax-advantaged {tax_adv_pct:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{AMBER}">●</span> Taxable {100-tax_adv_pct:.0f}%</span>
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -449,9 +450,9 @@ def render():
 
     with m3:
         st.markdown(f"""
-        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);
+        <div style="background:{tc["card"]};border:1px solid {tc["border"]};
                     border-radius:10px;padding:0.85rem 1rem;">
-            <div style="color:#475569;font-size:0.6rem;font-weight:700;
+            <div style="color:{tc["subtle"]};font-size:0.6rem;font-weight:700;
                         text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.6rem">
                 Where Every Dollar Goes</div>
             <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;margin-bottom:0.5rem">
@@ -461,9 +462,9 @@ def render():
                 <div style="width:{oth_share}%;background:#334155"></div>
             </div>
             <div style="display:flex;gap:0.7rem;flex-wrap:wrap">
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{RED}">●</span> Tax {tax_share:.0f}%</span>
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:#f43f5e">●</span> Ops {ops_share:.0f}%</span>
-                <span style="color:#94a3b8;font-size:0.7rem"><span style="color:{PURPLE}">●</span> Invest {inv_share:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{RED}">●</span> Tax {tax_share:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:#f43f5e">●</span> Ops {ops_share:.0f}%</span>
+                <span style="color:{tc["muted"]};font-size:0.7rem"><span style="color:{PURPLE}">●</span> Invest {inv_share:.0f}%</span>
             </div>
         </div>""", unsafe_allow_html=True)
 
@@ -475,18 +476,18 @@ def render():
 
     with m4:
         st.markdown(f"""
-        <div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);
+        <div style="background:{tc["card"]};border:1px solid {tc["border"]};
                     border-radius:10px;padding:0.85rem 1rem;">
-            <div style="color:#475569;font-size:0.6rem;font-weight:700;
+            <div style="color:{tc["subtle"]};font-size:0.6rem;font-weight:700;
                         text-transform:uppercase;letter-spacing:0.1em;margin-bottom:0.6rem">
                 Employer Match Capture</div>
             <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;
-                        margin-bottom:0.5rem;background:#1e293b">
+                        margin-bottom:0.5rem;background:{tc["card"]}">
                 <div style="width:{min(match_capture,100)}%;background:{cap_color}"></div>
             </div>
             <div style="display:flex;justify-content:space-between">
                 <span style="color:{cap_color};font-size:0.7rem;font-weight:600">{cap_label}</span>
-                <span style="color:#475569;font-size:0.7rem">${match_income:,.0f}/yr free</span>
+                <span style="color:{tc["subtle"]};font-size:0.7rem">${match_income:,.0f}/yr free</span>
             </div>
             {"" if uncaptured <= 0 else f'<div style="color:#ef4444;font-size:0.65rem;margin-top:0.3rem">⚠ ${uncaptured:,.0f}/yr left on table — increase 401k deferral</div>'}
         </div>""", unsafe_allow_html=True)
@@ -506,11 +507,11 @@ def render():
         st.markdown("<br>", unsafe_allow_html=True)
         items = "".join(f"<li style='margin-bottom:4px'>{m}</li>" for m in missing)
         st.markdown(
-            f'<div style="background:#0f172a;border:1px solid rgba(245,158,11,0.3);'
+            f'<div style="background:{tc["card"]};border:1px solid rgba(245,158,11,0.3);'
             f'border-radius:10px;padding:1rem 1.25rem;">'
             f'<div style="color:{AMBER};font-weight:600;margin-bottom:0.5rem">'
             f'⚠️ Incomplete data — add these for an accurate flow map:</div>'
-            f'<ul style="color:#94a3b8;font-size:0.85rem;margin:0;padding-left:1.2rem">'
+            f'<ul style="color:{tc["muted"]};font-size:0.85rem;margin:0;padding-left:1.2rem">'
             f'{items}</ul></div>',
             unsafe_allow_html=True,
         )

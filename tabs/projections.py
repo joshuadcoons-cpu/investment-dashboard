@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import date
 from dateutil.relativedelta import relativedelta
 from utils.calculations import calc_monthly_payment
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout
+from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, chart_layout, theme_colors
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -136,9 +136,12 @@ def _payoff_with_extra(loan_amount, rate_pct, term_years, loan_start_date):
     return _pd.DataFrame({"date": dates, "balance": bals}), payoff_date
 
 
-def _phase_card(color_hex, title_html, value_str, value_color, subtitle, breakdown):
+def _phase_card(color_hex, title_html, value_str, value_color, subtitle, breakdown, tc=None):
+    card_bg = tc["card"] if tc else "#0f172a"
+    faint   = tc["faint"] if tc else "#64748b"
+    subtle  = tc["subtle"] if tc else "#475569"
     st.markdown(f"""
-    <div style="background:#0f172a;border:1px solid {color_hex}40;
+    <div style="background:{card_bg};border:1px solid {color_hex}40;
                 border-radius:12px;padding:20px;text-align:center;height:100%">
         <div style="color:{color_hex};font-size:10px;font-weight:700;letter-spacing:1.2px;
                     text-transform:uppercase;margin-bottom:10px">
@@ -147,8 +150,8 @@ def _phase_card(color_hex, title_html, value_str, value_color, subtitle, breakdo
         <div style="color:{value_color};font-size:28px;font-weight:700;line-height:1">
             {value_str}
         </div>
-        <div style="color:#64748b;font-size:11px;margin-top:6px">{subtitle}</div>
-        <div style="color:#475569;font-size:10.5px;margin-top:10px;line-height:1.6">
+        <div style="color:{faint};font-size:11px;margin-top:6px">{subtitle}</div>
+        <div style="color:{subtle};font-size:10.5px;margin-top:10px;line-height:1.6">
             {breakdown}
         </div>
     </div>
@@ -159,6 +162,7 @@ def _phase_card(color_hex, title_html, value_str, value_color, subtitle, breakdo
 
 def render():
     a = st.session_state.assumptions
+    tc = theme_colors()
     st.header("🔮 Long-Term Projections")
 
     # ── Ages & key parameters ─────────────────────────────────────────────────
@@ -364,11 +368,11 @@ def render():
     # Formal retirement (label goes left, stepped lower to avoid SS overlap)
     if ret_age != w2_ret_age and ret_age != ss_age:
         fig.add_vline(x=ret_year, line_dash="dash",
-                      line_color="rgba(255,255,255,0.25)", line_width=1.2)
+                      line_color=tc["zeroline"], line_width=1.2)
         fig.add_annotation(
             x=ret_year, y=0.74, xref="x", yref="paper",
             text=f"<b>Retirement</b> · Age {ret_age}",
-            showarrow=False, font=dict(color="#94a3b8", size=11),
+            showarrow=False, font=dict(color=tc["muted"], size=11),
             xanchor="right", yanchor="top",
         )
 
@@ -432,6 +436,7 @@ def render():
                 f"− Costs &nbsp;${operating_costs:,.0f}"
                 + (f"<br><span style='color:#06b6d4'>{lp_note}</span>" if lp_note else "")
             ),
+            tc=tc,
         )
 
     with ph2:
@@ -450,6 +455,7 @@ def render():
                 f"− Burn (no mortgage) &nbsp;${burn_mo:,.0f} "
                 f"· {p2_pct:.0f}% covered"
             ),
+            tc=tc,
         )
 
     with ph3:
@@ -469,6 +475,7 @@ def render():
                 f"− Burn (no mortgage) &nbsp;${burn_mo:,.0f} "
                 f"· {p3_pct:.0f}% covered"
             ),
+            tc=tc,
         )
 
     st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)

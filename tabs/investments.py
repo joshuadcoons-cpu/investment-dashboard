@@ -6,7 +6,7 @@ import yfinance as yf
 from datetime import date
 from utils.calculations import ACCOUNT_LIMITS, calc_monthly_payment
 from utils.styles import (
-    BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout,
+    BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout, theme_colors,
 )
 from utils.database import add_transaction, get_transactions, delete_transaction
 
@@ -70,6 +70,7 @@ def _fv(pv: float, annual_pmt: float, rate: float, years: int) -> float:
 
 def render():
     a        = st.session_state.assumptions
+    tc       = theme_colors()
     accounts = a["investment_accounts"]
     age      = int(a["age"])
     ret_age  = int(a.get("retirement_age", 65))
@@ -212,7 +213,7 @@ def render():
 
         if alloc_rows:
             alloc_df = pd.DataFrame(alloc_rows)
-            colors   = [ACCOUNT_COLORS.get(t, "#475569") for t in alloc_df["Type"]]
+            colors   = [ACCOUNT_COLORS.get(t, tc["subtle"]) for t in alloc_df["Type"]]
             n_accts  = len([ac for ac in accounts if acct_mkt_values[ac["_id"]] > 0])
             n_accts += (1 if hysa_balance > 0 else 0) + (1 if sinking_balance > 0 else 0)
 
@@ -220,7 +221,7 @@ def render():
                 labels=alloc_df["Account"],
                 values=alloc_df["Balance"],
                 hole=0.62,
-                marker=dict(colors=colors, line=dict(color="#020817", width=3)),
+                marker=dict(colors=colors, line=dict(color=tc["pie_border"], width=3)),
                 textinfo="none",
                 hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
             ))
@@ -228,7 +229,7 @@ def render():
                 text=(f"<b>${grand_total / 1000:.0f}k</b><br>"
                       f"<span style='font-size:11px;color:#cbd5e1'>{n_accts} accounts</span>"),
                 x=0.5, y=0.5, showarrow=False,
-                font=dict(size=18, color="#f1f5f9"),
+                font=dict(size=18, color=tc["bright"]),
                 align="center",
             )
             fig_donut.update_layout(**chart_layout(
@@ -239,7 +240,7 @@ def render():
                     orientation="h",
                     x=0.5, y=-0.15,
                     xanchor="center",
-                    font=dict(size=10, color="#e2e8f0"),
+                    font=dict(size=10, color=tc["text"]),
                     itemwidth=30,
                 ),
                 margin=dict(l=20, r=20, t=50, b=80),
@@ -261,7 +262,7 @@ def render():
                 continue
 
             acct_type    = acct["account_type"]
-            color        = ACCOUNT_COLORS.get(acct_type, "#475569")
+            color        = ACCOUNT_COLORS.get(acct_type, tc["subtle"])
             limits       = ACCOUNT_LIMITS.get(acct_type, {})
             catchup_age  = 55 if acct_type == "HSA" else 50
             limit        = limits.get("catchup" if age >= catchup_age else "base")
@@ -348,9 +349,9 @@ def render():
     ))
     fig_g.add_vline(
         x=cur_year + years_left, line_dash="dot",
-        line_color="#475569", line_width=1.5,
+        line_color=tc["subtle"], line_width=1.5,
         annotation_text=f"Retirement (age {ret_age})",
-        annotation_font_color="#94a3b8",
+        annotation_font_color=tc["muted"],
         annotation_position="top right",
     )
     _y_max = max(bull_s) * 1.08
@@ -360,7 +361,7 @@ def render():
         fig_g.add_hline(
             y=m,
             line_dash="dot" if not is_major else "dash",
-            line_color="rgba(255,255,255,0.07)" if not is_major else "rgba(255,255,255,0.18)",
+            line_color=tc["grid"] if not is_major else tc["zeroline"],
             line_width=1,
         )
 
@@ -388,7 +389,7 @@ def render():
 
     for acct in accounts:
         acct_type   = acct["account_type"]
-        color       = ACCOUNT_COLORS.get(acct_type, "#475569")
+        color       = ACCOUNT_COLORS.get(acct_type, tc["subtle"])
         limits      = ACCOUNT_LIMITS.get(acct_type, {})
         catchup_age = 55 if acct_type == "HSA" else 50
         limit       = limits.get("catchup" if age >= catchup_age else "base")
@@ -664,7 +665,7 @@ def render():
                     hovertext=hover_data,
                     hovertemplate="%{hovertext}<extra></extra>",
                     colorscale=[
-                        [0, "rgba(15,23,42,1)"],
+                        [0, tc["heatmap_bg"]],
                         [0.01, "rgba(59,130,246,0.15)"],
                         [0.5, "rgba(59,130,246,0.5)"],
                         [1.0, BLUE],
@@ -820,13 +821,13 @@ def render():
                 fig_st = px.treemap(
                     ticker_df, path=["sector", "ticker"], values="value",
                     color="value",
-                    color_continuous_scale=[[0, "#1e293b"], [0.5, PURPLE], [1, BLUE]],
+                    color_continuous_scale=[[0, tc["card"]], [0.5, PURPLE], [1, BLUE]],
                     title="Holdings by Sector",
                 )
                 fig_st.update_traces(
                     texttemplate="<b>%{label}</b><br>%{percentParent:.1%}",
                     textfont=dict(color="white"),
-                    marker=dict(line=dict(color="#020817", width=2)),
+                    marker=dict(line=dict(color=tc["pie_border"], width=2)),
                 )
                 fig_st.update_layout(**chart_layout(height=400, coloraxis_showscale=False))
                 st.plotly_chart(fig_st, use_container_width=True)
@@ -866,7 +867,7 @@ def render():
                 fig_cmp.add_trace(go.Bar(
                     y=cmp_df["Sector"], x=cmp_df["S&P 500"],
                     name="S&P 500", orientation="h",
-                    marker=dict(color="#334155", opacity=0.7, line=dict(width=0)),
+                    marker=dict(color=tc["subtle"], opacity=0.7, line=dict(width=0)),
                 ))
                 fig_cmp.update_layout(**chart_layout(
                     height=400, barmode="group",
