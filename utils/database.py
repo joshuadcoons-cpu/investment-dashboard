@@ -58,21 +58,28 @@ def _init():
 
 # ── Assumptions ─────────────────────────────────────────────────────────────
 
+def _get_version(data: dict) -> int:
+    """Extract _data_version integer from an assumptions dict (0 if missing)."""
+    return int(data.get("_data_version", 0))
+
+
 def load_assumptions():
     """Return saved assumptions dict or None if no saved data exists.
 
-    Prefers assumptions.json over the SQLite DB so that git-pushed updates
-    take effect on Streamlit Cloud (which persists runtime DB changes across
-    redeploys but properly overwrites tracked text files on each deploy).
+    Reads BOTH assumptions.json and the SQLite DB, then returns whichever
+    has the higher _data_version.  When we push a new assumptions.json to git
+    with an incremented version, it always wins over the cloud's stale DB.
     """
-    # Try JSON first — it wins if it exists
+    json_data = None
+    db_data   = None
+
     if JSON_PATH.exists():
         try:
-            return json.loads(JSON_PATH.read_text(encoding="utf-8"),
-                              object_hook=_date_decoder)
+            json_data = json.loads(JSON_PATH.read_text(encoding="utf-8"),
+                                   object_hook=_date_decoder)
         except Exception:
             pass
-    # Fall back to SQLite
+
     _init()
     con = sqlite3.connect(DB_PATH)
     row = con.execute(
@@ -80,17 +87,27 @@ def load_assumptions():
     ).fetchone()
     con.close()
     if row:
-        return json.loads(row[0], object_hook=_date_decoder)
-    return None
+        try:
+            db_data = json.loads(row[0], object_hook=_date_decoder)
+        except Exception:
+            pass
+
+    # Pick the higher-versioned source
+    if json_data is not None and db_data is not None:
+        return json_data if _get_version(json_data) >= _get_version(db_data) else db_data
+    return json_data or db_data or None
 
 
 def save_assumptions(assumptions: dict) -> None:
-    """Persist the assumptions dict to both JSON and SQLite."""
+    """Persist the assumptions dict to both JSON and SQLite.
+
+    Does NOT change _data_version — only explicit git pushes bump the version.
+    """
     data = copy.deepcopy(assumptions)
     encoded = json.dumps(data, cls=_DateEncoder, indent=2)
-    # JSON (primary — git-trackable, survives Streamlit Cloud redeploys)
+    # JSON (git-trackable)
     JSON_PATH.write_text(encoded, encoding="utf-8")
-    # SQLite (backup / local use)
+    # SQLite (local / backup)
     _init()
     con = sqlite3.connect(DB_PATH)
     con.execute(
