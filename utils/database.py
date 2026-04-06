@@ -99,15 +99,13 @@ def load_assumptions():
 
 
 def save_assumptions(assumptions: dict) -> None:
-    """Persist the assumptions dict to both JSON and SQLite.
+    """Persist the assumptions dict to SQLite only.
 
-    Does NOT change _data_version — only explicit git pushes bump the version.
+    assumptions.json is READ-ONLY (git-tracked).  We never write to it at
+    runtime so that Streamlit Cloud's git deploy can always overwrite it
+    cleanly with our latest pushed version.
     """
     data = copy.deepcopy(assumptions)
-    encoded = json.dumps(data, cls=_DateEncoder, indent=2)
-    # JSON (git-trackable)
-    JSON_PATH.write_text(encoded, encoding="utf-8")
-    # SQLite (local / backup)
     _init()
     con = sqlite3.connect(DB_PATH)
     con.execute(
