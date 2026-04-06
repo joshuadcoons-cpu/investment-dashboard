@@ -1,0 +1,377 @@
+{
+  "dashboard_name": "Athena and Joshua's Investment Horizon",
+  "age": 26,
+  "retirement_age": 65,
+  "filing_status": "Married Filing Jointly",
+  "gross_income": 100000,
+  "take_home_monthly": 6719,
+  "spouse_gross_income": 55000,
+  "spouse_take_home_monthly": 3848,
+  "income_growth_pct": 3.0,
+  "home_current_value": 1695000,
+  "loan_original_amount": 997000,
+  "loan_interest_rate": 4.5,
+  "loan_term_years": 30,
+  "loan_start_date": {
+    "__date__": "2026-01-01"
+  },
+  "property_tax_rate": 1.2,
+  "home_insurance_annual": 4500,
+  "hoa_monthly": 0,
+  "maintenance_pct": 1.0,
+  "home_appreciation_pct": 3.0,
+  "emergency_fund_balance": 75000,
+  "emergency_fund_target_months": 6,
+  "checking_savings_balance": 5500,
+  "other_debts": [
+    {
+      "name": "Student Loans",
+      "balance": 14000,
+      "rate_pct": 3.5,
+      "monthly_payment": 138
+    }
+  ],
+  "investment_accounts": [
+    {
+      "account_type": "Brokerage",
+      "label": "Joint Brokerage",
+      "balance": 154157,
+      "monthly_contribution": 0,
+      "employer_match_pct": 0,
+      "employer_match_ceiling_pct": 0,
+      "cash_usd": 9385,
+      "holdings": [
+        {
+          "ticker": "VOO",
+          "shares": 95.0,
+          "avg_cost": 588.552,
+          "sector": "Unknown",
+          "notes": "Core US equity",
+          "_id": 0
+        },
+        {
+          "ticker": "QQQM",
+          "shares": 100.0,
+          "avg_cost": 231.8831,
+          "sector": "Technology",
+          "notes": "Tech growth",
+          "_id": 1
+        },
+        {
+          "ticker": "VFH",
+          "shares": 150.0,
+          "avg_cost": 118.3796,
+          "sector": "Financials",
+          "notes": "Financials",
+          "_id": 2
+        },
+        {
+          "ticker": "VHT",
+          "shares": 50.0,
+          "avg_cost": 266.5666,
+          "sector": "Healthcare",
+          "notes": "Healthcare",
+          "_id": 3
+        },
+        {
+          "ticker": "AAPL",
+          "shares": 21.0,
+          "avg_cost": 24.3386,
+          "sector": "Technology",
+          "notes": "Inherited pre-2000",
+          "_id": 4
+        },
+        {
+          "ticker": "IAU",
+          "shares": 40.0,
+          "avg_cost": 86.055,
+          "sector": "Unknown",
+          "notes": "Gold",
+          "_id": 5
+        },
+        {
+          "ticker": "VXUS",
+          "shares": 45.0,
+          "avg_cost": 75.1151,
+          "sector": "Unknown",
+          "notes": "Intl equity",
+          "_id": 6
+        },
+        {
+          "ticker": "PDBC",
+          "shares": 170.0,
+          "avg_cost": 17.3449,
+          "sector": "Unknown",
+          "notes": "Commodities",
+          "_id": 7
+        },
+        {
+          "ticker": "IBIT",
+          "shares": 65.0,
+          "avg_cost": 39.655,
+          "sector": "Unknown",
+          "notes": "Bitcoin ETF",
+          "_id": 8
+        },
+        {
+          "ticker": "VWO",
+          "shares": 46.0,
+          "avg_cost": 52.805,
+          "sector": "Unknown",
+          "notes": "Emerging markets",
+          "_id": 9
+        },
+        {
+          "ticker": "ETHA",
+          "shares": 80.0,
+          "avg_cost": 16.1298,
+          "sector": "Unknown",
+          "notes": "Ethereum ETF",
+          "_id": 10
+        },
+        {
+          "_id": 11,
+          "ticker": "MSFT",
+          "shares": 20.0,
+          "avg_cost": 369.0,
+          "notes": "Large cap tech",
+          "sector": "Technology"
+        },
+        {
+          "_id": 12,
+          "ticker": "META",
+          "shares": 5.0,
+          "avg_cost": 579.0,
+          "notes": "Social / AI",
+          "sector": "Technology"
+        }
+      ],
+      "_id": 0
+    },
+    {
+      "account_type": "Roth IRA",
+      "label": "Joshua's Roth IRA",
+      "balance": 14603,
+      "monthly_contribution": 583,
+      "employer_match_pct": 0,
+      "employer_match_ceiling_pct": 0,
+      "cash_usd": 487,
+      "ytd_contributed": 7000,
+      "holdings": [
+        {
+          "_id": 0,
+          "ticker": "AVUV",
+          "shares": 60.0,
+          "avg_cost": 112.0,
+          "notes": "Small cap value",
+          "sector": "Unknown"
+        },
+        {
+          "ticker": "SMH",
+          "shares": 10.0,
+          "avg_cost": 363.09,
+          "sector": "Technology",
+          "notes": "Semiconductors",
+          "_id": 1
+        },
+        {
+          "ticker": "VGT",
+          "shares": 5.0,
+          "avg_cost": 670.206,
+          "sector": "Technology",
+          "notes": "Tech",
+          "_id": 2
+        }
+      ],
+      "_id": 1
+    },
+    {
+      "account_type": "Roth IRA",
+      "label": "Athena's Roth IRA",
+      "balance": 14567,
+      "monthly_contribution": 583,
+      "employer_match_pct": 0,
+      "employer_match_ceiling_pct": 0,
+      "cash_usd": 0,
+      "ytd_contributed": 7000,
+      "holdings": [
+        {
+          "ticker": "SCHG",
+          "shares": 200.0,
+          "avg_cost": 30.45,
+          "sector": "Unknown",
+          "notes": "Large cap growth",
+          "_id": 0
+        },
+        {
+          "ticker": "VWO",
+          "shares": 70.0,
+          "avg_cost": 52.35,
+          "sector": "Unknown",
+          "notes": "Emerging markets",
+          "_id": 1
+        },
+        {
+          "ticker": "IAU",
+          "shares": 30.0,
+          "avg_cost": 85.65,
+          "sector": "Unknown",
+          "notes": "Gold",
+          "_id": 2
+        },
+        {
+          "ticker": "PDBC",
+          "shares": 130.0,
+          "avg_cost": 17.25,
+          "sector": "Unknown",
+          "notes": "Commodities",
+          "_id": 3
+        }
+      ],
+      "_id": 2
+    },
+    {
+      "account_type": "Trad IRA",
+      "label": "Rollover IRA",
+      "balance": 0,
+      "monthly_contribution": 0,
+      "employer_match_pct": 0,
+      "employer_match_ceiling_pct": 0,
+      "cash_usd": 0,
+      "skip_contribution": true,
+      "notes": "Cash liquidated. Transfer to 401k pending. Awaiting DocuSign.",
+      "holdings": [],
+      "_id": 3
+    },
+    {
+      "account_type": "401k",
+      "label": "Joshua 401k \u2014 John Hancock",
+      "balance": 23200,
+      "monthly_contribution": 1958,
+      "employer_match_pct": 100,
+      "employer_match_ceiling_pct": 5,
+      "cash_usd": 0,
+      "ytd_contributed": 10469,
+      "holdings": [
+        {
+          "ticker": null,
+          "fund_name": "S&P 500 Index (Vanguard Inst)",
+          "pct": 60,
+          "sector": "Unknown",
+          "_id": 0,
+          "shares": 0.0,
+          "avg_cost": null
+        },
+        {
+          "ticker": null,
+          "fund_name": "Intl Equity Index",
+          "pct": 20,
+          "sector": "Unknown",
+          "_id": 1,
+          "shares": 0.0,
+          "avg_cost": null
+        },
+        {
+          "ticker": null,
+          "fund_name": "Nuveen Small Cap Blend Index",
+          "pct": 20,
+          "sector": "Unknown",
+          "_id": 2,
+          "shares": 0.0,
+          "avg_cost": null
+        }
+      ],
+      "notes": "75% Roth / 25% Trad split. Manual balance \u2014 no API.",
+      "_id": 4
+    },
+    {
+      "account_type": "Crypto",
+      "label": "Crypto (Direct)",
+      "balance": 9453,
+      "monthly_contribution": 0,
+      "employer_match_pct": 0,
+      "employer_match_ceiling_pct": 0,
+      "cash_usd": 0,
+      "skip_contribution": true,
+      "holdings": [
+        {
+          "ticker": "BTC",
+          "shares": 0.13,
+          "avg_cost": null,
+          "sector": "Unknown",
+          "notes": "",
+          "_id": 0
+        },
+        {
+          "ticker": "ETH",
+          "shares": 0.28,
+          "avg_cost": null,
+          "sector": "Unknown",
+          "notes": "",
+          "_id": 1
+        },
+        {
+          "ticker": "ADA",
+          "shares": 287.0,
+          "avg_cost": null,
+          "sector": "Unknown",
+          "notes": "",
+          "_id": 2
+        },
+        {
+          "ticker": "XRP",
+          "shares": 61.0,
+          "avg_cost": null,
+          "sector": "Unknown",
+          "notes": "",
+          "_id": 3
+        },
+        {
+          "ticker": "DOGE",
+          "shares": 223.0,
+          "avg_cost": null,
+          "sector": "Unknown",
+          "notes": "",
+          "_id": 4
+        }
+      ],
+      "_id": 5
+    }
+  ],
+  "budget": {
+    "Groceries": 600,
+    "Dining Out": 300,
+    "Entertainment & Hobbies": 200,
+    "Transportation (gas/parking)": 300,
+    "Auto Insurance": 150,
+    "Utilities (electric/gas/water)": 200,
+    "Internet & Phone": 150,
+    "Subscriptions (streaming/etc)": 80,
+    "Healthcare & Pharmacy": 200,
+    "Clothing & Shopping": 150,
+    "Personal Care": 100,
+    "Travel & Vacations": 833,
+    "Gifts & Donations": 100,
+    "Pet Care": 0,
+    "Childcare & Education": 0,
+    "Miscellaneous": 150
+  },
+  "investment_return_pct": 7.0,
+  "inflation_pct": 3.0,
+  "social_security_monthly": 5000,
+  "social_security_start_age": 67,
+  "retirement_monthly_expenses": 16667,
+  "state_tax_pct": 3.8,
+  "sinking_fund_balance": 25000,
+  "parkwood_lp_monthly": 9583.33,
+  "family_gift_annual": 76000.0,
+  "gemini_balance": 2000.0,
+  "crypto_monthly": 300.0,
+  "crypto_eth_monthly": 100.0,
+  "crypto_btc_monthly": 200.0,
+  "w2_retirement_age": 55,
+  "lp_jb_pct": 85,
+  "lp_double_years": 5,
+  "annual_bonus": 15000,
+  "lp_net_pct": 75
+}

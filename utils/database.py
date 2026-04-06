@@ -2,9 +2,10 @@ import sqlite3
 import json
 import copy
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 
-DB_PATH = Path(__file__).parent.parent / "finance.db"
+DB_PATH   = Path(__file__).parent.parent / "finance.db"
+JSON_PATH = Path(__file__).parent.parent / "assumptions.json"
 
 
 class _DateEncoder(json.JSONEncoder):
@@ -58,7 +59,20 @@ def _init():
 # ── Assumptions ─────────────────────────────────────────────────────────────
 
 def load_assumptions():
-    """Return saved assumptions dict or None if no saved data exists."""
+    """Return saved assumptions dict or None if no saved data exists.
+
+    Prefers assumptions.json over the SQLite DB so that git-pushed updates
+    take effect on Streamlit Cloud (which persists runtime DB changes across
+    redeploys but properly overwrites tracked text files on each deploy).
+    """
+    # Try JSON first — it wins if it exists
+    if JSON_PATH.exists():
+        try:
+            return json.loads(JSON_PATH.read_text(encoding="utf-8"),
+                              object_hook=_date_decoder)
+        except Exception:
+            pass
+    # Fall back to SQLite
     _init()
     con = sqlite3.connect(DB_PATH)
     row = con.execute(
@@ -71,9 +85,13 @@ def load_assumptions():
 
 
 def save_assumptions(assumptions: dict) -> None:
-    """Persist the assumptions dict to SQLite."""
-    _init()
+    """Persist the assumptions dict to both JSON and SQLite."""
     data = copy.deepcopy(assumptions)
+    encoded = json.dumps(data, cls=_DateEncoder, indent=2)
+    # JSON (primary — git-trackable, survives Streamlit Cloud redeploys)
+    JSON_PATH.write_text(encoded, encoding="utf-8")
+    # SQLite (backup / local use)
+    _init()
     con = sqlite3.connect(DB_PATH)
     con.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('assumptions', ?)",
