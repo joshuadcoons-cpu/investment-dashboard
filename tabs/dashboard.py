@@ -298,14 +298,9 @@ def render():
     with c2:
         st.markdown('<p class="section-header">All Assets by Account</p>', unsafe_allow_html=True)
 
-        # Home equity (largest asset for most people)
         alloc_labels = []
         alloc_values = []
         alloc_colors = []
-        if home_equity > 0:
-            alloc_labels.append("Home Equity")
-            alloc_values.append(home_equity)
-            alloc_colors.append("#22d3ee")
 
         # Investment accounts — use live prices when available
         for acct in a["investment_accounts"]:
