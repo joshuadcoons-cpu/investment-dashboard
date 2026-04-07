@@ -281,10 +281,21 @@ def render():
     with c2:
         st.markdown('<p class="section-header">All Assets by Account</p>', unsafe_allow_html=True)
 
+        # Home equity (largest asset for most people)
+        alloc_labels = []
+        alloc_values = []
+        alloc_colors = []
+        if home_equity > 0:
+            alloc_labels.append("Home Equity")
+            alloc_values.append(home_equity)
+            alloc_colors.append("#22d3ee")
+
         # Investment accounts
-        alloc_labels = [acct["label"] for acct in a["investment_accounts"] if acct["balance"] > 0]
-        alloc_values = [acct["balance"] for acct in a["investment_accounts"] if acct["balance"] > 0]
-        alloc_colors = list(CHART_COLORS[:len(alloc_labels)])
+        for acct in a["investment_accounts"]:
+            if acct["balance"] > 0:
+                alloc_labels.append(acct["label"])
+                alloc_values.append(acct["balance"])
+        alloc_colors += list(CHART_COLORS[:len(alloc_labels) - len(alloc_colors)])
 
         # Cash / savings buckets
         _cash_buckets = [
