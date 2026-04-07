@@ -22,7 +22,24 @@ def render():
     status = get_loan_status(amort, today)
 
     home_equity       = max(a["home_current_value"] - status["current_balance"], 0)
-    total_investments = sum(acct["balance"] for acct in a["investment_accounts"])
+
+    # Use live prices for investment totals when available
+    _lp = st.session_state.get("live_prices", {})
+    def _live_mv(acct):
+        has_priced = any(
+            h.get("ticker") and _lp.get(h["ticker"])
+            for h in acct.get("holdings", [])
+        )
+        if has_priced:
+            mv = acct.get("cash_usd", 0)
+            for h in acct.get("holdings", []):
+                p = _lp.get(h.get("ticker"))
+                if p:
+                    mv += h["shares"] * p
+            return mv
+        return acct["balance"]
+
+    total_investments = sum(_live_mv(acct) for acct in a["investment_accounts"])
     total_take_home   = a["take_home_monthly"] + a["spouse_take_home_monthly"]
 
     # Passive income (LP distributions + annual gift) — must be in the cash flow
@@ -290,11 +307,12 @@ def render():
             alloc_values.append(home_equity)
             alloc_colors.append("#22d3ee")
 
-        # Investment accounts
+        # Investment accounts — use live prices when available
         for acct in a["investment_accounts"]:
-            if acct["balance"] > 0:
+            mv = _live_mv(acct)
+            if mv > 0:
                 alloc_labels.append(acct["label"])
-                alloc_values.append(acct["balance"])
+                alloc_values.append(mv)
         alloc_colors += list(CHART_COLORS[:len(alloc_labels) - len(alloc_colors)])
 
         # Cash / savings buckets
