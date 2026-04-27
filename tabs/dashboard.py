@@ -738,36 +738,36 @@ def render():
             cur_w = r["cur"] / max_scale * 100
             tgt_w = r["target"] / max_scale * 100
             over_cls = " over" if is_over else ""
-            sec_html += f"""
-            <div class="dv2-sector-row">
-              <div class="dv2-sector-head">
-                <span class="nm">{r["name"]}</span>
-                <span class="vs"><b>{r["cur"]:.1f}%</b> / {r["target"]}%</span>
-              </div>
-              <div class="dv2-sector-bar">
-                <div class="cur{over_cls}" style="width:{cur_w:.1f}%"></div>
-                <div class="target" style="left:{tgt_w:.1f}%"></div>
-              </div>
-            </div>"""
+            sec_html += (
+                f'<div class="dv2-sector-row">'
+                f'<div class="dv2-sector-head">'
+                f'<span class="nm">{_html.escape(r["name"])}</span>'
+                f'<span class="vs"><b>{r["cur"]:.1f}%</b> / {r["target"]}%</span>'
+                f'</div>'
+                f'<div class="dv2-sector-bar">'
+                f'<div class="cur{over_cls}" style="width:{cur_w:.1f}%"></div>'
+                f'<div class="target" style="left:{tgt_w:.1f}%"></div>'
+                f'</div></div>'
+            )
 
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Sector Allocation <span class="meta">vs target</span></div>
-          {sec_html}
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);
-                      display:flex;align-items:center;gap:18px;font-size:0.68rem;color:var(--dv2-muted)">
-            <span style="display:inline-flex;align-items:center;gap:6px">
-              <span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-blue),var(--dv2-blue-2));border-radius:2px"></span>Current
-            </span>
-            <span style="display:inline-flex;align-items:center;gap:6px">
-              <span style="width:2px;height:11px;background:var(--dv2-text-2)"></span>Target
-            </span>
-            <span style="display:inline-flex;align-items:center;gap:6px">
-              <span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-amber),#fbbf24);border-radius:2px"></span>Over target
-            </span>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+        legend_html = (
+            '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);'
+            'display:flex;align-items:center;gap:18px;font-size:0.68rem;color:var(--dv2-muted)">'
+            '<span style="display:inline-flex;align-items:center;gap:6px">'
+            '<span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-blue),var(--dv2-blue-2));border-radius:2px"></span>Current</span>'
+            '<span style="display:inline-flex;align-items:center;gap:6px">'
+            '<span style="width:2px;height:11px;background:var(--dv2-text-2)"></span>Target</span>'
+            '<span style="display:inline-flex;align-items:center;gap:6px">'
+            '<span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-amber),#fbbf24);border-radius:2px"></span>Over target</span>'
+            '</div>'
+        )
+
+        st.html(
+            '<div class="dv2 dv2-card">'
+            '<div class="dv2-h">Sector Allocation <span class="meta">vs target</span></div>'
+            f'{sec_html}{legend_html}'
+            '</div>'
+        )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 6. ROW 2 — Cash Flow Waterfall + Debt Payoff
@@ -844,23 +844,21 @@ def render():
     with r6b:
         yrs_left = status["months_remaining"] / 12
         mort_paid = a["loan_original_amount"] - status["current_balance"]
-        debt_html = f"""
-        <div class="dv2-debt">
-          <div class="dv2-debt-head">
-            <span class="nm">Mortgage</span>
-            <span class="meta">{yrs_left:.1f} yrs to go · payoff {status["payoff_date"].strftime("%b %Y")}</span>
-          </div>
-          <div class="dv2-debt-bar">
-            <div class="fl mortgage" style="width:{max(mort_pct, 0.5):.2f}%">
-              <span class="pmt">{_fmt_dollar(monthly_pi)}/mo</span>
-            </div>
-          </div>
-          <div class="dv2-debt-foot">
-            <span class="paid">Paid: {_fmt_k(mort_paid)} ({mort_pct:.2f}%)</span>
-            <span class="rem">Remaining: {_fmt_k(status["current_balance"])}</span>
-          </div>
-        </div>
-        """
+        debt_html = (
+            '<div class="dv2-debt">'
+            '<div class="dv2-debt-head">'
+            '<span class="nm">Mortgage</span>'
+            f'<span class="meta">{yrs_left:.1f} yrs to go · payoff {status["payoff_date"].strftime("%b %Y")}</span>'
+            '</div>'
+            '<div class="dv2-debt-bar">'
+            f'<div class="fl mortgage" style="width:{max(mort_pct, 0.5):.2f}%">'
+            f'<span class="pmt">{_fmt_dollar(monthly_pi)}/mo</span>'
+            '</div></div>'
+            '<div class="dv2-debt-foot">'
+            f'<span class="paid">Paid: {_fmt_k(mort_paid)} ({mort_pct:.2f}%)</span>'
+            f'<span class="rem">Remaining: {_fmt_k(status["current_balance"])}</span>'
+            '</div></div>'
+        )
         for d in a["other_debts"]:
             if d["balance"] <= 0:
                 continue
@@ -877,30 +875,28 @@ def render():
             from dateutil.relativedelta import relativedelta
             payoff_d = today + relativedelta(months=months_left)
             pct = 100 - (months_left / (months_left + 60)) * 100
-            debt_html += f"""
-            <div class="dv2-debt">
-              <div class="dv2-debt-head">
-                <span class="nm">{_html.escape(d["name"])}</span>
-                <span class="meta">{_fmt_k(d["balance"])} at {d["rate_pct"]}% · {yrs_left_d:.1f} yrs left</span>
-              </div>
-              <div class="dv2-debt-bar">
-                <div class="fl other" style="width:{pct:.1f}%">
-                  <span class="pmt">{_fmt_dollar(d["monthly_payment"])}/mo</span>
-                </div>
-              </div>
-              <div class="dv2-debt-foot">
-                <span class="paid">{_fmt_dollar(d["monthly_payment"])}/mo payment</span>
-                <span class="rem">Payoff: ~{payoff_d.strftime("%b %Y")}</span>
-              </div>
-            </div>
-            """
+            debt_html += (
+                '<div class="dv2-debt">'
+                '<div class="dv2-debt-head">'
+                f'<span class="nm">{_html.escape(d["name"])}</span>'
+                f'<span class="meta">{_fmt_k(d["balance"])} at {d["rate_pct"]}% · {yrs_left_d:.1f} yrs left</span>'
+                '</div>'
+                '<div class="dv2-debt-bar">'
+                f'<div class="fl other" style="width:{pct:.1f}%">'
+                f'<span class="pmt">{_fmt_dollar(d["monthly_payment"])}/mo</span>'
+                '</div></div>'
+                '<div class="dv2-debt-foot">'
+                f'<span class="paid">{_fmt_dollar(d["monthly_payment"])}/mo payment</span>'
+                f'<span class="rem">Payoff: ~{payoff_d.strftime("%b %Y")}</span>'
+                '</div></div>'
+            )
 
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Debt Payoff Timeline <span class="meta">{_fmt_k(total_liab)} total</span></div>
-          {debt_html}
-        </div>
-        """, unsafe_allow_html=True)
+        st.html(
+            '<div class="dv2 dv2-card">'
+            f'<div class="dv2-h">Debt Payoff Timeline <span class="meta">{_fmt_k(total_liab)} total</span></div>'
+            f'{debt_html}'
+            '</div>'
+        )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 7. ROW 2 — Investment Accounts + Top Holdings
@@ -932,29 +928,27 @@ def render():
             type_label = ac["account_type"]
             if ac["monthly_contribution"] > 0:
                 type_label += f' · {_fmt_dollar(ac["monthly_contribution"])}/mo'
-            acct_html += f"""
-            <div class="dv2-acct">
-              <div class="swatch" style="background:{it["color"]}"></div>
-              <div>
-                <div class="nm">{_html.escape(ac["label"])}</div>
-                <div class="ty">{type_label}</div>
-              </div>
-              <div>
-                <div class="bal cond">{_fmt_k(mv)}</div>
-                <div class="day" style="color:{day_color}">
-                  {day_sign}{_fmt_dollar(abs(day))} ({day_pct_sign}{day_pct:.2f}%)
-                </div>
-              </div>
-            </div>
-            """
+            acct_html += (
+                '<div class="dv2-acct">'
+                f'<div class="swatch" style="background:{it["color"]}"></div>'
+                '<div>'
+                f'<div class="nm">{_html.escape(ac["label"])}</div>'
+                f'<div class="ty">{_html.escape(type_label)}</div>'
+                '</div>'
+                '<div>'
+                f'<div class="bal cond">{_fmt_k(mv)}</div>'
+                f'<div class="day" style="color:{day_color}">'
+                f'{day_sign}{_fmt_dollar(abs(day))} ({day_pct_sign}{day_pct:.2f}%)'
+                '</div></div></div>'
+            )
         acct_html += "</div>"
 
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Investment Accounts <span class="meta">{_fmt_k(total_investments)} · {len(acct_items)} accounts</span></div>
-          {acct_html}
-        </div>
-        """, unsafe_allow_html=True)
+        st.html(
+            '<div class="dv2 dv2-card">'
+            f'<div class="dv2-h">Investment Accounts <span class="meta">{_fmt_k(total_investments)} · {len(acct_items)} accounts</span></div>'
+            f'{acct_html}'
+            '</div>'
+        )
 
     # ── Top Holdings ──────────────────────────────────────────────────────
     with r7b:
@@ -988,38 +982,36 @@ def render():
             ic_text = ticker_disp[:3] if len(ticker_disp) <= 4 else ticker_disp[:2]
             day_color = "var(--dv2-green-2)" if h["day_chg"] >= 0 else "var(--dv2-red-2)"
             day_sign = "+" if h["day_pct"] >= 0 else ""
-            rows_html += f"""
-            <tr>
-              <td>
-                <span class="dv2-tk">
-                  <span class="ic" style="background:{sec_color}">{ic_text}</span>
-                  <span class="nm">
-                    <span class="sym">{_html.escape(ticker_disp)}</span>
-                    <span class="nt">{_html.escape(h["sector"])}</span>
-                  </span>
-                </span>
-              </td>
-              <td class="r">{h["shares"]:,.4f}</td>
-              <td class="r">{_fmt_px(h["px"])}</td>
-              <td class="r" style="color:{day_color}">{day_sign}{h["day_pct"]:.2f}%</td>
-              <td class="r val">{_fmt_k(h["mv"])}</td>
-            </tr>"""
+            rows_html += (
+                '<tr><td>'
+                '<span class="dv2-tk">'
+                f'<span class="ic" style="background:{sec_color}">{_html.escape(ic_text)}</span>'
+                '<span class="nm">'
+                f'<span class="sym">{_html.escape(ticker_disp)}</span>'
+                f'<span class="nt">{_html.escape(h["sector"])}</span>'
+                '</span></span></td>'
+                f'<td class="r">{h["shares"]:,.4f}</td>'
+                f'<td class="r">{_fmt_px(h["px"])}</td>'
+                f'<td class="r" style="color:{day_color}">{day_sign}{h["day_pct"]:.2f}%</td>'
+                f'<td class="r val">{_fmt_k(h["mv"])}</td>'
+                '</tr>'
+            )
 
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Top Holdings <span class="meta">By market value</span></div>
-          <table class="dv2-holdings">
-            <thead><tr>
-              <th>Position</th>
-              <th class="r">Shares</th>
-              <th class="r">Price</th>
-              <th class="r">Day</th>
-              <th class="r">Value</th>
-            </tr></thead>
-            <tbody>{rows_html}</tbody>
-          </table>
-        </div>
-        """, unsafe_allow_html=True)
+        st.html(
+            '<div class="dv2 dv2-card">'
+            '<div class="dv2-h">Top Holdings <span class="meta">By market value</span></div>'
+            '<table class="dv2-holdings">'
+            '<thead><tr>'
+            '<th>Position</th>'
+            '<th class="r">Shares</th>'
+            '<th class="r">Price</th>'
+            '<th class="r">Day</th>'
+            '<th class="r">Value</th>'
+            '</tr></thead>'
+            f'<tbody>{rows_html}</tbody>'
+            '</table>'
+            '</div>'
+        )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 8. MILESTONE TRACKER
@@ -1034,21 +1026,23 @@ def render():
             done = net_worth >= target
             future = m["age"] > a["age"] and not done
             cls = "done" if done else ("future" if future else "")
-            ms_html += f"""
-            <div class="dv2-ms {cls}">
-              <div class="top">
-                <span><span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span><span class="ev">{_html.escape(m["event"])}</span></span>
-                <span class="pc">{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>
-              </div>
-              <div class="mtrack"><div class="mfill" style="width:{pct}%"></div></div>
-            </div>"""
+            ms_html += (
+                f'<div class="dv2-ms {cls}">'
+                '<div class="top">'
+                f'<span><span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span>'
+                f'<span class="ev">{_html.escape(m["event"])}</span></span>'
+                f'<span class="pc">{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>'
+                '</div>'
+                f'<div class="mtrack"><div class="mfill" style="width:{pct}%"></div></div>'
+                '</div>'
+            )
 
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Milestone Tracker <span class="meta">Path to financial independence</span></div>
-          {ms_html}
-        </div>
-        """, unsafe_allow_html=True)
+        st.html(
+            '<div class="dv2 dv2-card">'
+            '<div class="dv2-h">Milestone Tracker <span class="meta">Path to financial independence</span></div>'
+            f'{ms_html}'
+            '</div>'
+        )
 
     # Close the dv2 wrapper
     st.markdown('</div>', unsafe_allow_html=True)
