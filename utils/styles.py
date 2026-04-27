@@ -143,6 +143,391 @@ def chart_layout(**overrides) -> dict:
     return base
 
 
+def inject_dashboard_v2_css() -> None:
+    """Inject the redesigned dashboard CSS (hero, snapshot, KPI strip, etc.).
+
+    Call once at the top of tabs/dashboard.render() to enable the new visual
+    treatments. Uses scoped class names (.dv2-*) so it doesn't affect other
+    tabs. Imports JetBrains Mono for tabular numerics.
+    """
+    light = st.session_state.get("theme") == "light"
+
+    # Theme-aware colors
+    if light:
+        _bg          = "#f8fafc"
+        _card        = "#ffffff"
+        _card2       = "#f8fafc"
+        _line        = "rgba(0,0,0,0.08)"
+        _line_strong = "rgba(0,0,0,0.16)"
+        _text        = "#0f172a"
+        _text_2      = "#334155"
+        _muted       = "#64748b"
+        _faint       = "#94a3b8"
+        _dim         = "#cbd5e1"
+        _bar_track   = "rgba(0,0,0,0.05)"
+        _hover_bg    = "rgba(0,0,0,0.025)"
+        _accent_bg   = "rgba(0,0,0,0.04)"
+        _shadow      = "0 1px 4px rgba(0,0,0,0.08)"
+    else:
+        _bg          = "#020817"
+        _card        = "#0d1526"
+        _card2       = "#111c33"
+        _line        = "rgba(255,255,255,0.07)"
+        _line_strong = "rgba(255,255,255,0.14)"
+        _text        = "#f1f5f9"
+        _text_2      = "#cbd5e1"
+        _muted       = "#94a3b8"
+        _faint       = "#64748b"
+        _dim         = "#475569"
+        _bar_track   = "rgba(255,255,255,0.04)"
+        _hover_bg    = "rgba(255,255,255,0.025)"
+        _accent_bg   = "rgba(255,255,255,0.03)"
+        _shadow      = "0 4px 28px rgba(0,0,0,0.35)"
+
+    css = f"""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ── Dashboard v2 wrapper ──────────────────────────────────────────────── */
+.dv2 {{
+  --dv2-bg: {_bg};
+  --dv2-card: {_card};
+  --dv2-card2: {_card2};
+  --dv2-line: {_line};
+  --dv2-line-strong: {_line_strong};
+  --dv2-text: {_text};
+  --dv2-text-2: {_text_2};
+  --dv2-muted: {_muted};
+  --dv2-faint: {_faint};
+  --dv2-dim: {_dim};
+  --dv2-bar-track: {_bar_track};
+  --dv2-hover-bg: {_hover_bg};
+  --dv2-accent-bg: {_accent_bg};
+  --dv2-shadow: {_shadow};
+
+  --dv2-blue: #3b82f6;     --dv2-blue-2: #60a5fa;
+  --dv2-green: #10b981;    --dv2-green-2: #34d399;
+  --dv2-red: #ef4444;      --dv2-red-2: #f87171;
+  --dv2-amber: #f59e0b;
+  --dv2-purple: #8b5cf6;
+  --dv2-cyan: #06b6d4;
+  --dv2-pink: #ec4899;
+  --dv2-teal: #14b8a6;
+  --dv2-orange: #f97316;
+  --dv2-purple-2: #a78bfa;
+
+  font-family: 'Barlow', sans-serif;
+  font-feature-settings: "tnum" 1, "kern" 1;
+  -webkit-font-smoothing: antialiased;
+}}
+.dv2 .cond {{ font-family: 'Barlow Condensed', sans-serif; letter-spacing: -0.01em; }}
+.dv2 .mono {{ font-family: 'JetBrains Mono', monospace; }}
+
+/* ── Market ticker strip (top of dashboard) ───────────────────────────── */
+.dv2-market {{
+  display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
+  padding: 10px 16px;
+  background: {('rgba(13,21,38,0.6)' if not light else 'rgba(255,255,255,0.6)')};
+  border: 1px solid var(--dv2-line); border-radius: 12px;
+  backdrop-filter: blur(8px);
+  margin-bottom: 18px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+}}
+.dv2-tick {{ display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }}
+.dv2-tick .sym {{ color: var(--dv2-text-2); font-weight: 600; }}
+.dv2-tick .px  {{ color: var(--dv2-muted); }}
+.dv2-tick .chg {{ font-weight: 600; }}
+.dv2-tick .up  {{ color: var(--dv2-green-2); }}
+.dv2-tick .dn  {{ color: var(--dv2-red-2); }}
+
+/* ── Hero card ───────────────────────────────────────────────────────── */
+.dv2-card {{
+  background: linear-gradient(160deg, var(--dv2-card) 0%, var(--dv2-card2) 100%);
+  border: 1px solid var(--dv2-line);
+  border-radius: 16px; padding: 22px;
+  box-shadow: var(--dv2-shadow);
+  position: relative; overflow: hidden;
+  margin-bottom: 18px;
+}}
+.dv2-card::before {{
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(600px 200px at 80% -20%, rgba(59,130,246,0.08), transparent 70%);
+}}
+
+.dv2-eyebrow {{
+  font-family: 'Barlow'; font-size: 0.7rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px;
+}}
+.dv2-live {{
+  display: inline-flex; align-items: center; gap: 5px; font-size: 0.62rem;
+  background: rgba(16,185,129,0.1); color: var(--dv2-green-2);
+  padding: 2px 8px; border-radius: 9999px; letter-spacing: 0.08em; font-weight: 700;
+}}
+.dv2-live .pulse {{
+  width: 6px; height: 6px; border-radius: 50%; background: var(--dv2-green-2);
+  animation: dv2-pulse 1.6s ease-in-out infinite;
+}}
+@keyframes dv2-pulse {{
+  0%, 100% {{ opacity: 1; transform: scale(1); }}
+  50% {{ opacity: .4; transform: scale(0.7); }}
+}}
+.dv2-hero-value {{
+  font-family: 'Barlow Condensed'; font-weight: 700; font-size: 3.2rem;
+  line-height: 1; letter-spacing: -0.02em; color: var(--dv2-text);
+}}
+.dv2-delta {{
+  display: flex; align-items: baseline; gap: 10px; margin-top: 8px;
+  font-family: 'JetBrains Mono'; font-size: 0.95rem; font-weight: 600;
+}}
+.dv2-delta .pct {{ padding: 3px 8px; border-radius: 6px; font-size: 0.85rem; }}
+.dv2-delta.up .pct {{ background: rgba(16,185,129,0.12); color: var(--dv2-green-2); }}
+.dv2-delta.dn .pct {{ background: rgba(239,68,68,0.12); color: var(--dv2-red-2); }}
+.dv2-delta.up .amt {{ color: var(--dv2-green-2); }}
+.dv2-delta.dn .amt {{ color: var(--dv2-red-2); }}
+.dv2-delta .ts {{ color: var(--dv2-faint); font-family: 'Barlow'; font-weight: 500;
+  font-size: 0.78rem; margin-left: 6px; }}
+
+.dv2-meta {{
+  display: flex; gap: 22px; margin-top: 14px; padding-top: 14px;
+  border-top: 1px solid var(--dv2-line);
+  font-family: 'Barlow'; font-size: 0.78rem; color: var(--dv2-muted); flex-wrap: wrap;
+}}
+.dv2-meta .m {{ display: flex; flex-direction: column; gap: 2px; }}
+.dv2-meta .m b {{ color: var(--dv2-text); font-family: 'JetBrains Mono';
+  font-size: 0.92rem; font-weight: 600; }}
+.dv2-meta .m .lab {{ font-size: 0.62rem; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--dv2-faint); }}
+
+/* ── Snapshot mini KPIs ─────────────────────────────────────────────── */
+.dv2-snap-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
+.dv2-snap {{
+  background: var(--dv2-accent-bg); border: 1px solid var(--dv2-line);
+  border-radius: 11px; padding: 14px 16px; position: relative; overflow: hidden;
+}}
+.dv2-snap.purple {{ border-top: 2px solid var(--dv2-purple); }}
+.dv2-snap.green  {{ border-top: 2px solid var(--dv2-green); }}
+.dv2-snap.blue   {{ border-top: 2px solid var(--dv2-blue); }}
+.dv2-snap.amber  {{ border-top: 2px solid var(--dv2-amber); }}
+.dv2-snap .lab {{ font-size: 0.6rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; }}
+.dv2-snap .val {{ font-family: 'Barlow Condensed'; font-size: 1.55rem;
+  font-weight: 700; margin-top: 6px; line-height: 1; color: var(--dv2-text); }}
+.dv2-snap .sub {{ font-size: 0.7rem; color: var(--dv2-faint); margin-top: 5px; }}
+
+.dv2-meter {{ height: 6px; background: var(--dv2-bar-track); border-radius: 9999px;
+  overflow: hidden; margin-top: 10px; }}
+.dv2-meter .fill {{ height: 100%; border-radius: 9999px;
+  background: linear-gradient(90deg, var(--dv2-green), var(--dv2-cyan)); }}
+.dv2-meter.amber .fill {{ background: linear-gradient(90deg, var(--dv2-amber), #facc15); }}
+
+.dv2-headline-row {{ display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 8px; }}
+.dv2-headline-row .lab {{ font-size: 0.6rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; }}
+
+/* ── KPI strip ───────────────────────────────────────────────────────── */
+.dv2-kpi-grid {{
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
+  margin-bottom: 20px;
+}}
+@media (max-width: 1100px) {{ .dv2-kpi-grid {{ grid-template-columns: repeat(3, 1fr); }} }}
+@media (max-width: 680px) {{ .dv2-kpi-grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+.dv2-kpi {{
+  background: linear-gradient(160deg, var(--dv2-card) 0%, var(--dv2-card2) 100%);
+  border: 1px solid var(--dv2-line); border-radius: 13px; padding: 14px 16px;
+  position: relative; overflow: hidden; transition: all .2s ease;
+  box-shadow: var(--dv2-shadow);
+}}
+.dv2-kpi:hover {{ transform: translateY(-1px); border-color: var(--dv2-line-strong); }}
+.dv2-kpi .accent {{ position: absolute; top: 0; left: 0; right: 0; height: 2.5px; }}
+.dv2-kpi .lab {{ font-size: 0.58rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700; }}
+.dv2-kpi .val {{ font-family: 'Barlow Condensed'; font-size: 1.65rem;
+  font-weight: 700; margin-top: 6px; line-height: 1.05; color: var(--dv2-text); }}
+.dv2-kpi .sub {{ font-size: 0.66rem; color: var(--dv2-faint); margin-top: 4px; }}
+.dv2-kpi .spark {{ position: absolute; right: 10px; top: 14px; opacity: .55; }}
+
+/* ── Today's move strip ─────────────────────────────────────────────── */
+.dv2-move {{
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: linear-gradient(90deg, var(--dv2-card) 0%, var(--dv2-card2) 100%);
+  border: 1px solid var(--dv2-line);
+  border-radius: 11px; padding: 12px 18px; margin-bottom: 22px;
+}}
+.dv2-move.up {{ border-left: 3px solid var(--dv2-green); }}
+.dv2-move.dn {{ border-left: 3px solid var(--dv2-red); }}
+.dv2-move .ttl {{ font-size: 0.62rem; font-weight: 700; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; }}
+.dv2-move .big {{ font-family: 'Barlow Condensed'; font-size: 1.35rem; font-weight: 700; }}
+.dv2-move.up .big {{ color: var(--dv2-green-2); }}
+.dv2-move.dn .big {{ color: var(--dv2-red-2); }}
+.dv2-move .pct {{ font-family: 'JetBrains Mono'; font-size: 0.8rem; margin-left: 6px; }}
+.dv2-move.up .pct {{ color: var(--dv2-green-2); }}
+.dv2-move.dn .pct {{ color: var(--dv2-red-2); }}
+.dv2-move .sep {{ color: var(--dv2-dim); }}
+.dv2-move .acc {{ font-size: 0.78rem; color: var(--dv2-muted); font-family: 'Barlow'; }}
+.dv2-move .acc b {{ font-family: 'JetBrains Mono'; font-weight: 600; margin-left: 4px; }}
+
+/* ── Card header ─────────────────────────────────────────────────────── */
+.dv2-h {{
+  font-family: 'Barlow'; font-size: 0.7rem; color: var(--dv2-text-2);
+  font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em;
+  margin-bottom: 14px; display: flex; justify-content: space-between; align-items: center;
+}}
+.dv2-h .meta {{ color: var(--dv2-faint); font-weight: 500;
+  text-transform: none; letter-spacing: 0.02em; font-size: 0.74rem; }}
+
+/* ── Net worth bars ─────────────────────────────────────────────────── */
+.dv2-nw-row {{ display: flex; align-items: center; gap: 10px; margin-bottom: 9px; font-size: 0.78rem; }}
+.dv2-nw-row .name {{ width: 128px; color: var(--dv2-text-2); font-weight: 500;
+  flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.dv2-nw-row .barwrap {{ flex: 1; height: 18px; background: var(--dv2-bar-track);
+  border-radius: 5px; position: relative; overflow: hidden; }}
+.dv2-nw-row .bar {{ height: 100%; border-radius: 5px; display: flex;
+  align-items: center; padding: 0 8px; min-width: 2px; }}
+.dv2-nw-row .bar.asset {{ background: linear-gradient(90deg, rgba(16,185,129,0.6), rgba(16,185,129,0.85)); }}
+.dv2-nw-row .bar.liab  {{ background: linear-gradient(90deg, rgba(239,68,68,0.85), rgba(239,68,68,0.6));
+  margin-left: auto; }}
+.dv2-nw-row .amt {{ font-family: 'JetBrains Mono'; font-size: 0.72rem;
+  font-weight: 600; color: #fff; }}
+.dv2-nw-row.right .barwrap {{ display: flex; justify-content: flex-end; }}
+
+.dv2-nw-summary {{ display: flex; justify-content: space-between;
+  border-top: 1px solid var(--dv2-line); padding-top: 12px; margin-top: 14px; }}
+.dv2-nw-summary .col {{ flex: 1; }}
+.dv2-nw-summary .lab {{ font-size: 0.6rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }}
+.dv2-nw-summary .v {{ font-family: 'Barlow Condensed'; font-size: 1.35rem;
+  font-weight: 700; margin-top: 4px; }}
+.dv2-nw-summary .v.green  {{ color: var(--dv2-green-2); }}
+.dv2-nw-summary .v.red    {{ color: var(--dv2-red-2); }}
+.dv2-nw-summary .v.purple {{ color: var(--dv2-purple-2); }}
+
+/* ── Sector allocation ──────────────────────────────────────────────── */
+.dv2-sector-row {{ margin-bottom: 11px; }}
+.dv2-sector-head {{ display: flex; justify-content: space-between;
+  font-size: 0.74rem; margin-bottom: 5px; }}
+.dv2-sector-head .nm {{ color: var(--dv2-text-2); font-weight: 500; }}
+.dv2-sector-head .vs {{ color: var(--dv2-faint); font-family: 'JetBrains Mono'; font-size: 0.7rem; }}
+.dv2-sector-head .vs b {{ color: var(--dv2-text); }}
+.dv2-sector-bar {{ height: 14px; background: var(--dv2-bar-track);
+  border-radius: 4px; position: relative; overflow: visible; }}
+.dv2-sector-bar .target {{ position: absolute; top: -2px; bottom: -2px;
+  width: 2px; background: {('rgba(0,0,0,0.45)' if light else 'rgba(255,255,255,0.4)')};
+  z-index: 2; border-radius: 1px; }}
+.dv2-sector-bar .cur {{ height: 100%;
+  background: linear-gradient(90deg, var(--dv2-blue), var(--dv2-blue-2));
+  border-radius: 4px; }}
+.dv2-sector-bar .cur.over {{ background: linear-gradient(90deg, var(--dv2-amber), #fbbf24); }}
+
+/* ── Donut center ────────────────────────────────────────────────────── */
+.dv2-donut-stage {{ position: relative; width: 100%; }}
+.dv2-donut-center {{
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; pointer-events: none;
+}}
+.dv2-donut-center .lab {{ font-size: 0.58rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.14em; font-weight: 700; }}
+.dv2-donut-center .v {{ font-family: 'Barlow Condensed'; font-size: 1.7rem;
+  font-weight: 700; line-height: 1; margin-top: 3px; color: var(--dv2-text); }}
+.dv2-donut-legend {{ display: flex; flex-direction: column; gap: 5px;
+  font-size: 0.72rem; margin-top: 8px; }}
+.dv2-donut-legend .lr {{ display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px; }}
+.dv2-donut-legend .lr:hover {{ background: var(--dv2-hover-bg); }}
+.dv2-donut-legend .sw {{ width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }}
+.dv2-donut-legend .nm {{ flex: 1; color: var(--dv2-text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.dv2-donut-legend .pc {{ color: var(--dv2-faint);
+  font-family: 'JetBrains Mono'; font-size: 0.68rem; }}
+
+/* ── Debt payoff ─────────────────────────────────────────────────────── */
+.dv2-debt {{ margin-bottom: 18px; }}
+.dv2-debt-head {{ display: flex; justify-content: space-between;
+  align-items: baseline; margin-bottom: 7px; }}
+.dv2-debt-head .nm {{ font-size: 0.86rem; font-weight: 600; color: var(--dv2-text); }}
+.dv2-debt-head .meta {{ color: var(--dv2-faint); font-size: 0.72rem; font-family: 'Barlow'; }}
+.dv2-debt-bar {{ height: 22px; background: var(--dv2-bar-track);
+  border-radius: 7px; overflow: hidden; position: relative; }}
+.dv2-debt-bar .fl {{ height: 100%; border-radius: 7px; display: flex;
+  align-items: center; justify-content: flex-end; padding-right: 9px; min-width: 5%; }}
+.dv2-debt-bar .fl.mortgage {{ background: linear-gradient(90deg, var(--dv2-green), var(--dv2-cyan)); }}
+.dv2-debt-bar .fl.other {{ background: linear-gradient(90deg, var(--dv2-amber), var(--dv2-green)); }}
+.dv2-debt-bar .fl .pmt {{ font-family: 'JetBrains Mono'; font-size: 0.66rem;
+  font-weight: 600; color: #fff; }}
+.dv2-debt-foot {{ display: flex; justify-content: space-between;
+  font-size: 0.72rem; margin-top: 5px; }}
+.dv2-debt-foot .paid {{ color: var(--dv2-green-2);
+  font-family: 'JetBrains Mono'; font-weight: 600; }}
+.dv2-debt-foot .rem {{ color: var(--dv2-muted); font-family: 'JetBrains Mono'; }}
+
+/* ── Account list ────────────────────────────────────────────────────── */
+.dv2-acct-list {{ display: flex; flex-direction: column; gap: 10px; }}
+.dv2-acct {{
+  display: grid; grid-template-columns: 24px 1fr auto; gap: 14px; align-items: center;
+  padding: 11px 13px; background: var(--dv2-accent-bg);
+  border: 1px solid var(--dv2-line); border-radius: 10px;
+  transition: all .15s ease;
+}}
+.dv2-acct:hover {{ border-color: var(--dv2-line-strong); background: var(--dv2-hover-bg); }}
+.dv2-acct .swatch {{ width: 8px; height: 34px; border-radius: 3px; }}
+.dv2-acct .nm {{ font-size: 0.86rem; font-weight: 600; color: var(--dv2-text); }}
+.dv2-acct .ty {{ font-size: 0.66rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.08em; margin-top: 3px; }}
+.dv2-acct .bal {{ font-family: 'Barlow Condensed'; font-size: 1.25rem;
+  font-weight: 700; text-align: right; line-height: 1; color: var(--dv2-text); }}
+.dv2-acct .day {{ font-family: 'JetBrains Mono'; font-size: 0.72rem;
+  text-align: right; margin-top: 3px; }}
+
+/* ── Holdings table ──────────────────────────────────────────────────── */
+.dv2-holdings {{ width: 100%; border-collapse: collapse; font-size: 0.78rem; }}
+.dv2-holdings th {{
+  text-align: left; font-size: 0.6rem; color: var(--dv2-muted);
+  text-transform: uppercase; letter-spacing: 0.12em; font-weight: 700;
+  padding: 8px 10px; border-bottom: 1px solid var(--dv2-line);
+}}
+.dv2-holdings th.r {{ text-align: right; }}
+.dv2-holdings td {{ padding: 10px;
+  border-bottom: 1px solid var(--dv2-line); vertical-align: middle; color: var(--dv2-text-2); }}
+.dv2-holdings td.r {{ text-align: right; font-family: 'JetBrains Mono';
+  font-size: 0.74rem; }}
+.dv2-holdings td.val {{ color: var(--dv2-text); font-weight: 600; }}
+.dv2-holdings tr:hover td {{ background: var(--dv2-accent-bg); }}
+.dv2-tk {{ display: inline-flex; align-items: center; gap: 8px; }}
+.dv2-tk .ic {{
+  width: 28px; height: 28px; border-radius: 7px; display: flex;
+  align-items: center; justify-content: center;
+  font-family: 'Barlow Condensed'; font-weight: 700; font-size: 0.72rem;
+  color: #fff; flex-shrink: 0;
+}}
+.dv2-tk .nm {{ display: flex; flex-direction: column; line-height: 1.2; }}
+.dv2-tk .nm .sym {{ font-family: 'JetBrains Mono'; font-weight: 600;
+  font-size: 0.78rem; color: var(--dv2-text); }}
+.dv2-tk .nm .nt {{ font-size: 0.64rem; color: var(--dv2-muted); }}
+
+/* ── Milestone ───────────────────────────────────────────────────────── */
+.dv2-ms {{ margin-bottom: 13px; }}
+.dv2-ms .top {{ display: flex; justify-content: space-between;
+  font-size: 0.78rem; margin-bottom: 5px; }}
+.dv2-ms .top .ttl {{ color: var(--dv2-text); font-weight: 600; }}
+.dv2-ms .top .ev {{ color: var(--dv2-faint); font-size: 0.72rem;
+  margin-left: 8px; font-weight: 400; }}
+.dv2-ms .top .pc {{ color: var(--dv2-muted); font-family: 'JetBrains Mono';
+  font-size: 0.7rem; }}
+.dv2-ms .mtrack {{ height: 7px; background: var(--dv2-bar-track);
+  border-radius: 9999px; overflow: hidden; }}
+.dv2-ms .mfill {{ height: 100%; background: var(--dv2-blue); border-radius: 9999px; }}
+.dv2-ms.done .mfill {{ background: linear-gradient(90deg, var(--dv2-green), var(--dv2-green-2)); }}
+.dv2-ms.future .mfill {{ background: var(--dv2-bar-track); }}
+
+/* ── Range pills (override Streamlit segmented_control / pills) ──────── */
+.dv2 [data-testid="stRadio"] > div {{ flex-direction: row !important; gap: 2px; }}
+</style>
+"""
+    st.markdown(css, unsafe_allow_html=True)
+
+
 def inject_css() -> None:
     theme = st.session_state.get("theme", "dark")
     _light_overrides = ""

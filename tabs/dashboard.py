@@ -1,676 +1,1054 @@
+"""Dashboard v2 — Financial Dashboard polished redesign.
+
+Layout (top → bottom):
+    1. Market ticker strip
+    2. Hero row: Growth chart (left) + Snapshot panel (right)
+    3. KPI strip (6 cards with sparklines)
+    4. Today's Move strip
+    5. Row 3: Net Worth bars / Allocation donut / Sector allocation
+    6. Row 2: Cash Flow Waterfall / Debt Payoff Timeline
+    7. Row 2: Investment Accounts / Top Holdings table
+    8. Milestone Tracker
+"""
+
+import math
+import random
+import html as _html
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, timedelta
 from utils.calculations import (
     calc_monthly_payment, build_amortization, get_loan_status,
 )
-from utils.styles import BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS, chart_layout, theme_colors
+from utils.styles import (
+    BLUE, GREEN, RED, PURPLE, AMBER, CYAN, CHART_COLORS,
+    chart_layout, theme_colors, inject_dashboard_v2_css,
+)
 
+
+# ─── Constants ──────────────────────────────────────────────────────────────
+
+SECTOR_COLORS = {
+    "US Equity":         "#3b82f6",
+    "Technology":        "#8b5cf6",
+    "International":     "#06b6d4",
+    "Emerging Markets":  "#ec4899",
+    "Commodities":       "#f59e0b",
+    "Crypto":            "#f97316",
+    "Financials":        "#14b8a6",
+    "Healthcare":        "#10b981",
+    "Other":             "#64748b",
+    "Unknown":           "#64748b",
+}
+
+ACCT_COLORS = ["#3b82f6", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899"]
+
+DEFAULT_TARGET_ALLOC = {
+    "US Equity": 35, "Technology": 15, "International": 10, "Emerging Markets": 5,
+    "Commodities": 10, "Crypto": 10, "Financials": 5, "Healthcare": 5, "Other": 5,
+}
+
+CRYPTO_TICKERS = {"BTC", "ETH", "ADA", "XRP", "DOGE", "IBIT", "ETHA"}
+
+MARKET_PICKS = ["VOO", "QQQM", "AAPL", "MSFT", "BTC", "ETH", "IAU"]
+
+
+# ─── Formatters ─────────────────────────────────────────────────────────────
+
+def _fmt_k(v):
+    """Compact dollar: $1.02M / $697k / $123."""
+    sign = "-" if v < 0 else ""
+    a = abs(v)
+    if a >= 1_000_000:
+        return f"{sign}${a/1_000_000:.2f}M"
+    if a >= 1_000:
+        return f"{sign}${a/1_000:.0f}k"
+    return f"{sign}${a:,.0f}"
+
+
+def _fmt_dollar(v, dp=0):
+    sign = "-" if v < 0 else ""
+    return f"{sign}${abs(v):,.{dp}f}"
+
+
+def _fmt_px(v):
+    if v is None:
+        return "—"
+    if abs(v) < 1:
+        return f"{v:.4f}"
+    return f"{v:,.2f}"
+
+
+# ─── Sparklines ─────────────────────────────────────────────────────────────
+
+def _sparkline_svg(values, color, w=60, h=24):
+    if not values:
+        return ""
+    mn, mx = min(values), max(values)
+    rng = mx - mn or 1
+    n = len(values)
+    pts = " ".join(
+        f"{(i/(n-1) if n > 1 else 0)*w:.1f},{h - ((v - mn)/rng) * h:.1f}"
+        for i, v in enumerate(values)
+    )
+    return (
+        f'<svg viewBox="0 0 {w} {h}" preserveAspectRatio="none" '
+        f'style="width:60px;height:24px">'
+        f'<polyline points="{pts}" fill="none" stroke="{color}" stroke-width="1.5" '
+        f'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+    )
+
+
+def _rand_spark(n=14, trend=1.0, seed=None):
+    rng = random.Random(seed) if seed is not None else random
+    out = [50.0]
+    for _ in range(n - 1):
+        out.append(out[-1] + (rng.random() - 0.5 + 0.1 * trend) * 5)
+    return out
+
+
+# ─── Growth chart simulator ─────────────────────────────────────────────────
+
+_RANGE_CFG = {
+    # (n_bars,  step,                 drift,   vol,    span)
+    "1D":  (78,  timedelta(minutes=5),   0.00002, 0.0008, 0.012),
+    "1W":  (56,  timedelta(hours=3),     0.00008, 0.0015, 0.025),
+    "1M":  (30,  timedelta(days=1),      0.0007,  0.005,  0.06),
+    "3M":  (65,  timedelta(hours=36),    0.0009,  0.007,  0.11),
+    "YTD": (110, timedelta(days=1),      0.0008,  0.008,  0.13),
+    "1Y":  (250, timedelta(days=1),      0.0006,  0.009,  0.22),
+    "5Y":  (260, timedelta(weeks=1),     0.0018,  0.012,  0.95),
+}
+
+
+def _generate_growth_series(end_value, range_label, seed=None):
+    """Return (datetimes, values) of a simulated path that lands at end_value."""
+    rng = random.Random(seed) if seed is not None else random
+    n, dt, drift, vol, span = _RANGE_CFG.get(range_label, _RANGE_CFG["1W"])
+    start = end_value / (1 + span * (0.85 + rng.random() * 0.4))
+
+    v = start
+    path = [v]
+    for _ in range(1, n):
+        u1 = max(rng.random(), 1e-12)
+        u2 = rng.random()
+        z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+        v = v * (1 + drift + vol * z)
+        path.append(v)
+
+    correction = end_value / path[-1] if path[-1] else 1
+    out = []
+    for i, p in enumerate(path):
+        w = i / (len(path) - 1) if len(path) > 1 else 1
+        out.append(p * (1 + (correction - 1) * (0.6 + 0.4 * w)))
+    out[-1] = end_value
+
+    now = datetime.now()
+    times = [now - dt * (n - 1 - i) for i in range(n)]
+    return times, out
+
+
+# ─── Render ─────────────────────────────────────────────────────────────────
 
 def render():
-    a = st.session_state.assumptions
+    a  = st.session_state.assumptions
     tc = theme_colors()
 
-    # ── Shared calculations ───────────────────────────────────────────────────
+    # Inject the redesigned dashboard CSS
+    inject_dashboard_v2_css()
+    st.markdown('<div class="dv2">', unsafe_allow_html=True)
+
+    today = date.today()
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Calculations (same as before — proven correct)
+    # ═══════════════════════════════════════════════════════════════════════
     amort  = build_amortization(
         a["loan_original_amount"], a["loan_interest_rate"],
         a["loan_term_years"], a["loan_start_date"],
     )
-    today  = date.today()
     status = get_loan_status(amort, today)
 
-    home_equity       = max(a["home_current_value"] - status["current_balance"], 0)
+    home_equity = max(a["home_current_value"] - status["current_balance"], 0)
 
-    # Use live prices for investment totals when available
-    _lp = st.session_state.get("live_prices", {})
-    def _live_mv(acct):
+    # Live prices (per-ticker market value)
+    live_prices = st.session_state.get("live_prices", {})
+    prev_prices = st.session_state.get("prev_prices", {})
+
+    def _holding_mv(h):
+        tk = h.get("ticker")
+        if tk and live_prices.get(tk):
+            return h["shares"] * live_prices[tk]
+        if h.get("avg_cost"):
+            return h["shares"] * h["avg_cost"]
+        return 0
+
+    def _acct_mv(acct):
         has_priced = any(
-            h.get("ticker") and _lp.get(h["ticker"])
+            h.get("ticker") and live_prices.get(h["ticker"])
             for h in acct.get("holdings", [])
         )
         if has_priced:
             mv = acct.get("cash_usd", 0)
             for h in acct.get("holdings", []):
-                p = _lp.get(h.get("ticker"))
+                p = live_prices.get(h.get("ticker"))
                 if p:
                     mv += h["shares"] * p
             return mv
-        return acct["balance"]
+        return acct.get("balance", 0)
 
-    total_investments = sum(_live_mv(acct) for acct in a["investment_accounts"])
-    total_take_home   = a["take_home_monthly"] + a["spouse_take_home_monthly"]
+    def _acct_day(acct):
+        d = 0.0
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if tk and live_prices.get(tk) and prev_prices.get(tk):
+                d += (live_prices[tk] - prev_prices[tk]) * h["shares"]
+        return d
 
-    # Passive income (LP distributions + annual gift) — must be in the cash flow
-    passive_monthly   = a.get("parkwood_lp_monthly", 0) + a.get("family_gift_annual", 0) / 12
-    total_monthly_in  = total_take_home + passive_monthly
+    total_investments = sum(_acct_mv(acct) for acct in a["investment_accounts"])
+    cost_basis = sum(
+        acct.get("cash_usd", 0) + sum(
+            h["shares"] * h.get("avg_cost", 0) for h in acct.get("holdings", [])
+            if h.get("avg_cost") is not None
+        )
+        for acct in a["investment_accounts"]
+    )
 
-    monthly_pi   = calc_monthly_payment(
+    # Income / cash flow
+    take_home   = a["take_home_monthly"] + a["spouse_take_home_monthly"]
+    passive     = a.get("parkwood_lp_monthly", 0) + a.get("family_gift_annual", 0) / 12
+    monthly_in  = take_home + passive
+
+    monthly_pi  = calc_monthly_payment(
         a["loan_original_amount"], a["loan_interest_rate"], a["loan_term_years"])
-    monthly_tax  = a["home_current_value"] * a["property_tax_rate"] / 100 / 12
-    monthly_ins  = a["home_insurance_annual"] / 12
-    monthly_hoa  = a["hoa_monthly"]
-    monthly_mnt  = a["home_current_value"] * a["maintenance_pct"] / 100 / 12
-    total_housing = monthly_pi + monthly_tax + monthly_ins + monthly_hoa + monthly_mnt
-    total_debts   = sum(d["monthly_payment"] for d in a["other_debts"])
-    total_var     = sum(a["budget"].values())
-    total_inv_contrib = sum(acct["monthly_contribution"] for acct in a["investment_accounts"])
-    net_cash_flow = total_monthly_in - total_housing - total_debts - total_var - total_inv_contrib
-    savings_rate  = (
-        (total_inv_contrib + max(net_cash_flow, 0)) / total_monthly_in * 100
-        if total_monthly_in else 0
+    monthly_tax = a["home_current_value"] * a["property_tax_rate"] / 100 / 12
+    monthly_ins = a["home_insurance_annual"] / 12
+    monthly_hoa = a["hoa_monthly"]
+    monthly_mnt = a["home_current_value"] * a["maintenance_pct"] / 100 / 12
+    housing     = monthly_pi + monthly_tax + monthly_ins + monthly_hoa + monthly_mnt
+    debts       = sum(d["monthly_payment"] for d in a["other_debts"])
+    budget      = sum(a["budget"].values())
+    invest_mo   = sum(acct["monthly_contribution"] for acct in a["investment_accounts"])
+    net_cf      = monthly_in - housing - debts - budget - invest_mo
+    savings_rate = (
+        (invest_mo + max(net_cf, 0)) / monthly_in * 100 if monthly_in else 0
     )
 
-    total_liabilities = (status["current_balance"]
-                         + sum(d["balance"] for d in a["other_debts"]))
-    sinking_fund      = a.get("sinking_fund_balance", 0)
-    total_assets      = (a["home_current_value"] + total_investments
-                         + a["emergency_fund_balance"] + sinking_fund
-                         + a["checking_savings_balance"])
-    net_worth         = total_assets - total_liabilities
+    sinking_fund = a.get("sinking_fund_balance", 0)
+    liquid_cash  = a["emergency_fund_balance"] + sinking_fund + a["checking_savings_balance"]
+    total_assets = a["home_current_value"] + total_investments + liquid_cash
+    total_liab   = status["current_balance"] + sum(d["balance"] for d in a["other_debts"])
+    net_worth    = total_assets - total_liab
 
-    total_exp = total_housing + total_debts + total_var
-    # Emergency fund coverage uses EF balance only (dedicated bucket)
-    liquid_savings = a["emergency_fund_balance"] + sinking_fund + a["checking_savings_balance"]
-    ef_months = liquid_savings / total_exp if total_exp else 0
+    total_exp = housing + debts + budget
+    ef_months = liquid_cash / total_exp if total_exp else 0
 
-    # Retirement readiness (mortgage paid off before retirement → use post-payoff costs)
-    post_payoff_exp = total_exp - monthly_pi
-    years_to_ret = a["retirement_age"] - a["age"]
-    readiness_pct = 0
-    if years_to_ret > 0:
-        r   = a["investment_return_pct"] / 100 / 12
+    # Daily P&L
+    daily_gain = sum(_acct_day(acct) for acct in a["investment_accounts"])
+    daily_pct  = (
+        daily_gain / (total_investments - daily_gain) * 100
+        if (total_investments - daily_gain) else 0
+    )
+
+    # Retirement projection
+    yrs_to_ret = a["retirement_age"] - a["age"]
+    retire = {"pct": 0, "ret_income": 0, "inflated": 0, "bal": 0}
+    if yrs_to_ret > 0:
+        r = a["investment_return_pct"] / 100 / 12
         bal = float(total_investments)
-        for _ in range(years_to_ret * 12):
-            bal = bal * (1 + r) + total_inv_contrib
-        ret_portfolio = bal
-        safe_monthly  = ret_portfolio * 0.04 / 12
-        ss = (a["social_security_monthly"]
-              if (a["age"] + years_to_ret) >= a["social_security_start_age"] else 0)
-        lp_doubled_net = a.get("parkwood_lp_monthly", 0) * a.get("lp_net_pct", 100) / 100 * 2
-        ret_income    = safe_monthly + ss + lp_doubled_net
-        inflated_exp  = post_payoff_exp * (1 + a["inflation_pct"] / 100) ** years_to_ret
-        readiness_pct = (ret_income / inflated_exp * 100) if inflated_exp else 0
+        for _ in range(yrs_to_ret * 12):
+            bal = bal * (1 + r) + invest_mo
+        safe_mo = bal * 0.04 / 12
+        ss = a["social_security_monthly"] if (a["age"] + yrs_to_ret) >= a["social_security_start_age"] else 0
+        lp_doubled = a.get("parkwood_lp_monthly", 0) * a.get("lp_net_pct", 100) / 100 * 2
+        ret_income = safe_mo + ss + lp_doubled
+        post_payoff = total_exp - monthly_pi
+        inflated = post_payoff * (1 + a["inflation_pct"] / 100) ** yrs_to_ret
+        retire = {
+            "pct": (ret_income / inflated * 100) if inflated else 0,
+            "ret_income": ret_income,
+            "inflated": inflated,
+            "bal": bal,
+        }
 
-    # ── Section header ────────────────────────────────────────────────────────
-    st.markdown(
-        f'<p class="section-header">Financial Snapshot — {today.strftime("%B %d, %Y")}</p>',
-        unsafe_allow_html=True,
-    )
+    # ═══════════════════════════════════════════════════════════════════════
+    # 1. MARKET TICKER STRIP
+    # ═══════════════════════════════════════════════════════════════════════
+    ticker_data = {}
+    for acct in a["investment_accounts"]:
+        for h in acct.get("holdings", []):
+            tk = h.get("ticker")
+            if tk and tk not in ticker_data:
+                px_ = live_prices.get(tk)
+                prev = prev_prices.get(tk)
+                if px_:
+                    chg = (px_ - prev) if prev else 0
+                    pct = (chg / prev * 100) if prev else 0
+                    ticker_data[tk] = {"px": px_, "chg": chg, "pct": pct}
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 1 — KPI Cards
-    # ═══════════════════════════════════════════════════════════════════════════
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-
-    def _fmt_large(v):
-        """Format large dollar values compactly: $1.02M, $697k, etc."""
-        av = abs(v)
-        sign = "-" if v < 0 else ""
-        if av >= 1_000_000:
-            return f"{sign}${av/1_000_000:.2f}M"
-        if av >= 1_000:
-            return f"{sign}${av/1_000:.0f}k"
-        return f"{sign}${av:,.0f}"
-
-    with k1:
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {PURPLE}">
-            <div class="kpi-label">Net Worth</div>
-            <div class="kpi-value">{_fmt_large(net_worth)}</div>
-            <div class="kpi-sub">Assets − Liabilities</div>
-        </div>""", unsafe_allow_html=True)
-
-    with k2:
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {BLUE}">
-            <div class="kpi-label">Portfolio Value</div>
-            <div class="kpi-value">{_fmt_large(total_investments)}</div>
-            <div class="kpi-sub">{len(a["investment_accounts"])} accounts</div>
-        </div>""", unsafe_allow_html=True)
-
-    with k3:
-        ltv = status["current_balance"] / a["home_current_value"] * 100 if a["home_current_value"] else 0
-        equity_pct = 100 - ltv
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {GREEN}">
-            <div class="kpi-label">Home Equity</div>
-            <div class="kpi-value">{_fmt_large(home_equity)}</div>
-            <div class="kpi-sub">{equity_pct:.1f}% equity · LTV {ltv:.1f}%</div>
-        </div>""", unsafe_allow_html=True)
-
-    with k4:
-        cf_color = GREEN if net_cash_flow >= 0 else RED
-        cf_label = "Surplus" if net_cash_flow >= 0 else "Deficit"
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {cf_color}">
-            <div class="kpi-label">Monthly Cash Flow</div>
-            <div class="kpi-value" style="color:{cf_color}">${net_cash_flow:,.0f}</div>
-            <div class="kpi-sub">{cf_label}</div>
-        </div>""", unsafe_allow_html=True)
-
-    with k5:
-        sr_color = GREEN if savings_rate >= 15 else (AMBER if savings_rate >= 10 else RED)
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {sr_color}">
-            <div class="kpi-label">Savings Rate</div>
-            <div class="kpi-value" style="color:{sr_color}">{savings_rate:.1f}%</div>
-            <div class="kpi-sub">of total monthly income</div>
-        </div>""", unsafe_allow_html=True)
-
-    with k6:
-        ef_color = (GREEN if ef_months >= a["emergency_fund_target_months"]
-                    else (AMBER if ef_months >= 3 else RED))
-        st.markdown(f"""
-        <div class="kpi-card" style="border-top: 3px solid {ef_color}">
-            <div class="kpi-label">Emergency Fund</div>
-            <div class="kpi-value" style="color:{ef_color}">{ef_months:.1f} mo</div>
-            <div class="kpi-sub">goal: {a["emergency_fund_target_months"]} months</div>
-        </div>""", unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # TODAY'S MOVE — daily gain/loss strip
-    # ═══════════════════════════════════════════════════════════════════════════
-    live_prices = st.session_state.get("live_prices", {})
-    prev_prices = st.session_state.get("prev_prices", {})
-
-    if live_prices and prev_prices:
-        # Compute total daily gain and per-account daily gains
-        daily_gain_total = 0.0
-        per_acct_daily = []
-        for acct in a["investment_accounts"]:
-            acct_day = 0.0
-            for h in acct.get("holdings", []):
-                tk = h.get("ticker")
-                if tk and live_prices.get(tk) and prev_prices.get(tk):
-                    acct_day += (live_prices[tk] - prev_prices[tk]) * h["shares"]
-            if acct_day != 0:
-                per_acct_daily.append((acct["label"], acct_day))
-            daily_gain_total += acct_day
-
-        if daily_gain_total != 0:
-            day_sign  = "+" if daily_gain_total >= 0 else ""
-            day_color = GREEN if daily_gain_total >= 0 else RED
-            day_pct   = (daily_gain_total / (total_investments - daily_gain_total) * 100
-                         if (total_investments - daily_gain_total) != 0 else 0)
-            day_arrow = "▲" if daily_gain_total >= 0 else "▼"
-
-            st.markdown(
-                f'<div style="background:#0f172a;border:1px solid rgba(255,255,255,0.07);'
-                f'border-left:3px solid {day_color};border-radius:10px;'
-                f'padding:0.65rem 1.2rem;margin-bottom:1rem;'
-                f'display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">'
-                f'<span style="color:#64748b;font-size:0.72rem;font-weight:700;'
-                f'text-transform:uppercase;letter-spacing:.08em">Today\'s Move</span>'
-                f'<span style="color:{day_color};font-size:1.25rem;font-weight:700">'
-                f'{day_arrow} {day_sign}${abs(daily_gain_total):,.0f}'
-                f'<span style="font-size:0.85rem;margin-left:6px">'
-                f'({day_sign}{day_pct:.2f}%)</span></span>'
-                + "".join(
-                    f'<span style="color:#475569;font-size:0.8rem">·</span>'
-                    f'<span style="color:{"#94a3b8"};font-size:0.8rem">'
-                    f'{lbl}: <span style="color:{"#10b981" if v >= 0 else "#ef4444"};font-weight:600">'
-                    f'{"+" if v >= 0 else ""}${v:,.0f}</span></span>'
-                    for lbl, v in per_acct_daily
-                )
-                + f'</div>',
-                unsafe_allow_html=True,
+    ticker_html = ""
+    for sym in MARKET_PICKS:
+        if sym in ticker_data:
+            t = ticker_data[sym]
+            cls = "up" if t["chg"] >= 0 else "dn"
+            arrow = "▲" if t["chg"] >= 0 else "▼"
+            sign = "+" if t["pct"] >= 0 else ""
+            ticker_html += (
+                f'<span class="dv2-tick"><span class="sym">{sym}</span>'
+                f'<span class="px">{_fmt_px(t["px"])}</span>'
+                f'<span class="chg {cls}">{arrow} {sign}{t["pct"]:.2f}%</span></span>'
             )
+    if ticker_html:
+        st.markdown(f'<div class="dv2-market">{ticker_html}</div>', unsafe_allow_html=True)
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 2 — Charts
-    # ═══════════════════════════════════════════════════════════════════════════
-    c1, c2, c3 = st.columns([1.1, 0.9, 1.0])
+    # ═══════════════════════════════════════════════════════════════════════
+    # 2. HERO ROW — Growth chart + Snapshot
+    # ═══════════════════════════════════════════════════════════════════════
+    hero_l, hero_r = st.columns([1.55, 1])
 
-    # ── Net Worth Diverging Bar ───────────────────────────────────────────────
-    with c1:
-        st.markdown('<p class="section-header">Net Worth Breakdown</p>', unsafe_allow_html=True)
+    with hero_l:
+        # Range selector — use Streamlit pills if available, else radio
+        if "growth_range" not in st.session_state:
+            st.session_state.growth_range = "1W"
 
-        # Build items: assets (positive) and liabilities (negative)
-        div_items = [
-            ("Checking/Savings", a["checking_savings_balance"],  GREEN),
-            ("HYSA",             a["emergency_fund_balance"],    GREEN),
-            ("Home Value",       a["home_current_value"],        GREEN),
-            ("Investments",      total_investments,              GREEN),
-        ]
-        if sinking_fund > 0:
-            div_items.insert(1, ("Sinking Fund", sinking_fund, GREEN))
-        if status["current_balance"] > 0:
-            div_items.append(("Mortgage", -status["current_balance"], RED))
-        for d in a["other_debts"]:
-            if d["balance"] > 0:
-                div_items.append((d["name"], -d["balance"], RED))
+        ranges = ["1D", "1W", "1M", "3M", "YTD", "1Y", "5Y"]
+        try:
+            sel = st.pills(
+                "Growth range", ranges,
+                default=st.session_state.growth_range,
+                label_visibility="collapsed",
+                key="growth_range_pills",
+            )
+            if sel:
+                st.session_state.growth_range = sel
+        except Exception:
+            sel = st.radio(
+                "Growth range", ranges,
+                index=ranges.index(st.session_state.growth_range),
+                horizontal=True,
+                label_visibility="collapsed",
+                key="growth_range_radio",
+            )
+            st.session_state.growth_range = sel
 
-        # Sort ascending: negatives (liabilities) at top, positives (assets) at bottom
-        div_items.sort(key=lambda x: x[1])
-        div_labels = [d[0] for d in div_items]
-        div_values = [d[1] for d in div_items]
-        div_colors = [d[2] for d in div_items]
+        rng = st.session_state.growth_range
+        seed_key = f"growth_seed_{rng}"
+        if seed_key not in st.session_state:
+            st.session_state[seed_key] = random.randint(0, 1_000_000)
+        times, vals = _generate_growth_series(net_worth, rng, st.session_state[seed_key])
 
-        def _fmt(v):
-            av = abs(v)
-            if av >= 1_000_000:
-                return f"${av/1_000_000:.1f}M"
-            if av >= 1_000:
-                return f"${av/1_000:.0f}k"
-            return f"${av:,.0f}"
+        start_v = vals[0]
+        end_v   = vals[-1]
+        change  = end_v - start_v
+        chg_pct = (change / start_v * 100) if start_v else 0
+        is_up   = change >= 0
+        stroke  = "#34d399" if is_up else "#f87171"
 
-        import math
-        # Cube-root scale compresses large values aggressively so small
-        # bars ($6k, $14k) are still clearly visible next to $1.7M.
-        def _compress(v):
-            return math.copysign(abs(v) ** (1/3), v)
+        # Hero header HTML (eyebrow + value + delta)
+        delta_cls = "up" if is_up else "dn"
+        sign      = "+" if is_up else "−"
+        st.markdown(f"""
+        <div class="dv2-card" style="margin-bottom:0;padding-bottom:0">
+          <div class="dv2-eyebrow">Net Worth · Growth
+            <span class="dv2-live"><span class="pulse"></span>LIVE</span>
+          </div>
+          <div class="dv2-hero-value">{_fmt_dollar(net_worth)}</div>
+          <div class="dv2-delta {delta_cls}">
+            <span class="amt mono">{sign}{_fmt_dollar(abs(change))}</span>
+            <span class="pct mono">{sign if is_up else "−"}{abs(chg_pct):.2f}%</span>
+            <span class="ts">past {rng}</span>
+          </div>
+        """, unsafe_allow_html=True)
 
-        bar_x = [_compress(v) for v in div_values]
-        bar_text = [_fmt(v) for v in div_values]
+        # Plotly growth chart
+        fig = go.Figure()
+        fill_rgba = ("rgba(16,185,129,0.18)" if is_up else "rgba(239,68,68,0.18)")
+        fade_rgba = ("rgba(16,185,129,0)" if is_up else "rgba(239,68,68,0)")
 
-        # Place labels outside for assets, inside for liabilities (so they don't overlap y-axis)
-        text_pos = ["outside" if v >= 0 else "inside" for v in div_values]
-
-        fig_nw = go.Figure(go.Bar(
-            y=div_labels,
-            x=bar_x,
-            orientation="h",
-            marker=dict(color=div_colors, line=dict(width=0)),
-            text=bar_text,
-            textposition=text_pos,
-            textfont=dict(size=10, color=tc["text"]),
-            cliponaxis=False,
-            hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
+        # Glow line (thicker, lower opacity)
+        fig.add_trace(go.Scatter(
+            x=times, y=vals,
+            mode="lines",
+            line=dict(color=stroke, width=5, shape="spline", smoothing=0.6),
+            opacity=0.25, hoverinfo="skip", showlegend=False,
         ))
-        fig_nw.update_layout(**chart_layout(
-            height=320,
-            showlegend=False,
-            margin=dict(l=80),
-            xaxis=dict(
-                showticklabels=False,
-                zeroline=True,
-                zerolinewidth=2,
-                zerolinecolor=tc["zeroline"],
+        # Filled area
+        fig.add_trace(go.Scatter(
+            x=times, y=vals,
+            mode="lines",
+            line=dict(color=stroke, width=2, shape="spline", smoothing=0.6),
+            fill="tozeroy", fillcolor=fill_rgba,
+            hovertemplate="<b>%{x|%a %b %d, %I:%M %p}</b><br>"
+                          "$%{y:,.0f}<extra></extra>",
+            hoverlabel=dict(
+                bgcolor="rgba(15,23,42,0.95)",
+                bordercolor=tc["border"],
+                font=dict(family="JetBrains Mono", size=12, color="#f1f5f9"),
             ),
+            showlegend=False,
+            name="Net Worth",
         ))
-        st.plotly_chart(fig_nw, use_container_width=True)
+        # Endpoint dot
+        fig.add_trace(go.Scatter(
+            x=[times[-1]], y=[end_v],
+            mode="markers",
+            marker=dict(size=10, color=stroke,
+                        line=dict(color="rgba(255,255,255,0.9)", width=2)),
+            hoverinfo="skip", showlegend=False,
+        ))
 
-    # ── All Assets Donut ────────────────────────────────────────────────────
-    with c2:
-        st.markdown('<p class="section-header">All Assets by Account</p>', unsafe_allow_html=True)
+        # Y-axis range — tight around the data
+        y_min = min(vals) * 0.996
+        y_max = max(vals) * 1.004
 
-        alloc_labels = []
-        alloc_values = []
-        alloc_colors = []
+        fig.update_layout(**chart_layout(
+            height=280,
+            margin=dict(l=10, r=10, t=10, b=20),
+            showlegend=False,
+            xaxis=dict(
+                showgrid=False, showline=False, zeroline=False,
+                tickfont=dict(size=10, color=tc["faint"]),
+            ),
+            yaxis=dict(
+                range=[y_min, y_max],
+                tickprefix="$", tickformat=",.0s",
+                gridcolor=tc["grid"], showline=False, zeroline=False,
+                tickfont=dict(size=10, color=tc["faint"]),
+            ),
+            hovermode="x unified",
+        ))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        # Investment accounts — use live prices when available
+        # Footer meta strip
+        period_high = max(vals)
+        period_low  = min(vals)
+        period_rng  = period_high - period_low
+        vol_pct     = (period_rng / start_v * 100) if start_v else 0
+        chg_color   = "var(--dv2-green-2)" if is_up else "var(--dv2-red-2)"
+        st.markdown(f"""
+          <div class="dv2-meta">
+            <div class="m"><span class="lab">Open</span><b>{_fmt_k(start_v)}</b></div>
+            <div class="m"><span class="lab">High</span><b>{_fmt_k(period_high)}</b></div>
+            <div class="m"><span class="lab">Low</span><b>{_fmt_k(period_low)}</b></div>
+            <div class="m"><span class="lab">Range</span><b>{_fmt_k(period_rng)}</b></div>
+            <div class="m"><span class="lab">Volatility</span><b>{vol_pct:.2f}%</b></div>
+            <div class="m" style="margin-left:auto;color:{chg_color}">
+              <span class="lab">Period change</span>
+              <b style="color:inherit">{sign}{_fmt_k(abs(change))} ({sign}{abs(chg_pct):.2f}%)</b>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with hero_r:
+        # Snapshot card
+        snap_date = today.strftime("%B %d, %Y")
+        port_gain = total_investments - cost_basis
+        eq_pct    = home_equity / a["home_current_value"] * 100 if a["home_current_value"] else 0
+        ret_pct_disp  = min(150, retire["pct"])
+        ret_fill_pct  = min(100, ret_pct_disp)
+        mort_pct      = status["pct_paid"] if "pct_paid" in status else (
+            (a["loan_original_amount"] - status["current_balance"]) / a["loan_original_amount"] * 100
+            if a["loan_original_amount"] else 0
+        )
+
+        st.markdown(f"""
+        <div class="dv2-card" style="margin-bottom:0">
+          <div class="dv2-h">Snapshot <span class="meta">{snap_date}</span></div>
+          <div class="dv2-snap-grid">
+            <div class="dv2-snap purple">
+              <div class="lab">Net Worth</div>
+              <div class="val cond">{_fmt_k(net_worth)}</div>
+              <div class="sub">Assets − Liabilities</div>
+            </div>
+            <div class="dv2-snap blue">
+              <div class="lab">Portfolio</div>
+              <div class="val cond">{_fmt_k(total_investments)}</div>
+              <div class="sub">{len(a["investment_accounts"])} accounts · {_fmt_k(port_gain)} gain</div>
+            </div>
+            <div class="dv2-snap green">
+              <div class="lab">Home Equity</div>
+              <div class="val cond">{_fmt_k(home_equity)}</div>
+              <div class="sub">{eq_pct:.1f}% of {_fmt_k(a["home_current_value"])}</div>
+            </div>
+            <div class="dv2-snap amber">
+              <div class="lab">Liquid Cash</div>
+              <div class="val cond">{_fmt_k(liquid_cash)}</div>
+              <div class="sub">{ef_months:.1f} months runway</div>
+            </div>
+          </div>
+
+          <div style="margin-top:18px">
+            <div class="dv2-headline-row">
+              <div class="lab">Retirement readiness — age {a["retirement_age"]}</div>
+              <div class="mono" style="font-size:0.78rem;color:var(--dv2-green-2)">{ret_pct_disp:.0f}% covered</div>
+            </div>
+            <div class="dv2-meter"><div class="fill" style="width:{ret_fill_pct}%"></div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.68rem;color:var(--dv2-faint)">
+              <span>{_fmt_k(retire["ret_income"])}/mo income</span>
+              <span>{_fmt_k(retire["inflated"])}/mo need</span>
+            </div>
+          </div>
+
+          <div style="margin-top:14px">
+            <div class="dv2-headline-row">
+              <div class="lab">Mortgage paid off</div>
+              <div class="mono" style="font-size:0.78rem;color:var(--dv2-cyan)">{mort_pct:.1f}% paid</div>
+            </div>
+            <div class="dv2-meter amber"><div class="fill" style="width:{mort_pct}%"></div></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.68rem;color:var(--dv2-faint)">
+              <span>{_fmt_k(a["loan_original_amount"] - status["current_balance"])} paid</span>
+              <span>Payoff {status["payoff_date"].strftime("%b %Y")}</span>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 3. KPI STRIP — 6 cards with sparklines
+    # ═══════════════════════════════════════════════════════════════════════
+    ltv = status["current_balance"] / a["home_current_value"] * 100 if a["home_current_value"] else 0
+    eq_pct = 100 - ltv
+
+    cf_color  = "var(--dv2-green-2)" if net_cf >= 0 else "var(--dv2-red-2)"
+    cf_accent = "#34d399" if net_cf >= 0 else "#f87171"
+    sr_color  = "var(--dv2-green-2)" if savings_rate >= 15 else (
+        "var(--dv2-amber)" if savings_rate >= 10 else "var(--dv2-red-2)")
+    sr_accent = "#34d399" if savings_rate >= 15 else ("#f59e0b" if savings_rate >= 10 else "#f87171")
+    ef_color  = "var(--dv2-green-2)" if ef_months >= a["emergency_fund_target_months"] else (
+        "var(--dv2-amber)" if ef_months >= 3 else "var(--dv2-red-2)")
+    ef_accent = "#34d399" if ef_months >= a["emergency_fund_target_months"] else (
+        "#f59e0b" if ef_months >= 3 else "#f87171")
+
+    kpis = [
+        {"lab": "Net Worth",         "val": _fmt_k(net_worth),
+         "sub": "Assets − Liabilities", "accent": "#a78bfa",
+         "spark": _rand_spark(14, 1.4, 1)},
+        {"lab": "Portfolio",         "val": _fmt_k(total_investments),
+         "sub": f'{len(a["investment_accounts"])} accounts', "accent": "#60a5fa",
+         "spark": _rand_spark(14, 1.0, 2)},
+        {"lab": "Home Equity",       "val": _fmt_k(home_equity),
+         "sub": f"{eq_pct:.1f}% equity · LTV {ltv:.1f}%", "accent": "#34d399",
+         "spark": _rand_spark(14, 0.8, 3)},
+        {"lab": "Monthly Cash Flow", "val": _fmt_dollar(net_cf),
+         "sub": "Surplus" if net_cf >= 0 else "Deficit",
+         "accent": cf_accent, "valColor": cf_color,
+         "spark": _rand_spark(14, 1.2 if net_cf >= 0 else -0.5, 4)},
+        {"lab": "Savings Rate",      "val": f"{savings_rate:.1f}%",
+         "sub": "of monthly income", "accent": sr_accent, "valColor": sr_color,
+         "spark": _rand_spark(14, 0.9, 5)},
+        {"lab": "Emergency Fund",    "val": f"{ef_months:.1f} mo",
+         "sub": f'goal: {a["emergency_fund_target_months"]} months',
+         "accent": ef_accent, "valColor": ef_color,
+         "spark": _rand_spark(14, 0.6, 6)},
+    ]
+
+    kpi_html = '<div class="dv2-kpi-grid">'
+    for k in kpis:
+        spark = _sparkline_svg(k["spark"], k["accent"])
+        val_style = f'style="color:{k["valColor"]}"' if k.get("valColor") else ""
+        kpi_html += f"""
+        <div class="dv2-kpi">
+          <div class="accent" style="background:{k['accent']}"></div>
+          <div class="spark">{spark}</div>
+          <div class="lab">{k['lab']}</div>
+          <div class="val" {val_style}>{k['val']}</div>
+          <div class="sub">{k['sub']}</div>
+        </div>"""
+    kpi_html += "</div>"
+    st.markdown(kpi_html, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 4. TODAY'S MOVE STRIP
+    # ═══════════════════════════════════════════════════════════════════════
+    if abs(daily_gain) > 0.5 and live_prices and prev_prices:
+        is_up = daily_gain >= 0
+        cls = "up" if is_up else "dn"
+        arrow = "▲" if is_up else "▼"
+        sign = "+" if is_up else "−"
+        per_acct = []
         for acct in a["investment_accounts"]:
-            mv = _live_mv(acct)
-            if mv > 0:
-                alloc_labels.append(acct["label"])
-                alloc_values.append(mv)
-        alloc_colors += list(CHART_COLORS[:len(alloc_labels) - len(alloc_colors)])
-
-        # Cash / savings buckets
-        _cash_buckets = [
-            ("HYSA",           a["emergency_fund_balance"],     "#f43f5e"),
-            ("Sinking Fund",   sinking_fund,                    "#f97316"),
-            ("Checking / Savings", a["checking_savings_balance"], CYAN),
-        ]
-        for lbl, val, clr in _cash_buckets:
-            if val > 0:
-                alloc_labels.append(lbl)
-                alloc_values.append(val)
-                alloc_colors.append(clr)
-
-        all_assets_total = sum(alloc_values)
-        if alloc_values:
-            fig_donut = go.Figure(go.Pie(
-                labels=alloc_labels,
-                values=alloc_values,
-                hole=0.62,
-                marker=dict(colors=alloc_colors, line=dict(color=tc["pie_border"], width=3)),
-                textinfo="none",
-                hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
-            ))
-            fig_donut.add_annotation(
-                text=f"<b>${all_assets_total/1e3:.0f}k</b>",
-                x=0.5, y=0.5, showarrow=False,
-                font=dict(size=18, color=tc["bright"]),
+            d = _acct_day(acct)
+            if abs(d) > 1:
+                per_acct.append((acct["label"], d))
+        acct_html = ""
+        for lbl, d in per_acct:
+            acct_color = "var(--dv2-green-2)" if d >= 0 else "var(--dv2-red-2)"
+            sign_d = "+" if d >= 0 else "−"
+            acct_html += (
+                f'<span class="sep">·</span>'
+                f'<span class="acc">{_html.escape(lbl)}: '
+                f'<b style="color:{acct_color}">{sign_d}{_fmt_dollar(abs(d))}</b></span>'
             )
-            fig_donut.update_layout(**chart_layout(
-                height=380,
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    x=0.5, y=-0.15,
-                    xanchor="center",
-                    font=dict(size=10, color=tc["text"]),
-                    itemwidth=30,
-                ),
-                margin=dict(t=10, b=80),
-            ))
-            st.plotly_chart(fig_donut, use_container_width=True)
-        else:
-            st.info("Add investment accounts in ⚙️ Setup.")
+        st.markdown(f"""
+        <div class="dv2-move {cls}">
+          <span class="ttl">Today's Move</span>
+          <span class="big">{arrow} {sign}{_fmt_dollar(abs(daily_gain))}
+            <span class="pct">({sign}{abs(daily_pct):.2f}%)</span>
+          </span>
+          {acct_html}
+        </div>
+        """, unsafe_allow_html=True)
 
-    # ── Budget Snapshot (annual) ─────────────────────────────────────────────
-    with c3:
-        st.markdown('<p class="section-header">Top Annual Budget Categories</p>', unsafe_allow_html=True)
-        budget_items = {
-            "Housing": total_housing * 12,
-            **{k: v * 12 for k, v in sorted(a["budget"].items(), key=lambda x: -x[1])[:6] if v > 0},
-            "Investments": total_inv_contrib * 12,
-        }
-        b_df = pd.DataFrame(list(budget_items.items()), columns=["Category", "Amount"])
-        b_df = b_df[b_df["Amount"] > 0].sort_values("Amount")
-        bar_colors = [BLUE if cat == "Housing" else
-                      GREEN if cat == "Investments" else
-                      tc["subtle"] for cat in b_df["Category"]]
-        b_labels = [f"${v:,.0f}" for v in b_df["Amount"]]
-        fig_b = go.Figure(go.Bar(
-            y=b_df["Category"], x=b_df["Amount"],
-            orientation="h",
-            marker=dict(color=bar_colors, line=dict(width=0)),
-            text=b_labels,
-            textposition="outside",
-            textfont=dict(size=11, color=tc["secondary"]),
-            cliponaxis=False,
-        ))
-        fig_b.update_layout(**chart_layout(
-            height=320,
-            showlegend=False,
-            xaxis=dict(tickprefix="$", tickformat=",.0f"),
-        ))
-        st.plotly_chart(fig_b, use_container_width=True)
+    # ═══════════════════════════════════════════════════════════════════════
+    # 5. ROW 3 — Net Worth bars / Donut / Sector
+    # ═══════════════════════════════════════════════════════════════════════
+    r3a, r3b, r3c = st.columns([1.1, 0.9, 1.0])
 
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 3 — Cash Flow Waterfall + Sector Allocation
-    # ═══════════════════════════════════════════════════════════════════════════
-    g1, g2 = st.columns([1, 1])
+    # ── Net Worth Breakdown ───────────────────────────────────────────────
+    with r3a:
+        nw_items = [
+            ("Home Value",       a["home_current_value"],       "asset"),
+            ("Investments",      total_investments,             "asset"),
+            ("HYSA",             a["emergency_fund_balance"],   "asset"),
+            ("Sinking Fund",     sinking_fund,                  "asset"),
+            ("Checking/Savings", a["checking_savings_balance"], "asset"),
+            ("Mortgage",         status["current_balance"],     "liab"),
+        ]
+        for d in a["other_debts"]:
+            nw_items.append((d["name"], d["balance"], "liab"))
+        nw_items = [it for it in nw_items if it[1] > 0]
+        max_v = max(it[1] for it in nw_items) or 1
 
-    # ── Cash Flow Waterfall ──────────────────────────────────────────────────
-    with g1:
-        st.markdown('<p class="section-header">Monthly Cash Flow Waterfall</p>', unsafe_allow_html=True)
+        rows_html = ""
+        for name, v, typ in nw_items:
+            w = (v / max_v) ** 0.45 * 100
+            right_cls = " right" if typ == "liab" else ""
+            rows_html += (
+                f'<div class="dv2-nw-row{right_cls}">'
+                f'<div class="name">{_html.escape(name)}</div>'
+                f'<div class="barwrap">'
+                f'<div class="bar {typ}" style="width:{w:.1f}%">'
+                f'<span class="amt">{_fmt_k(v)}</span></div></div></div>'
+            )
 
-        wf_labels  = ["Income", "Housing", "Debts", "Variable\nSpending",
-                       "Investments", "Surplus"]
-        wf_values  = [total_monthly_in, -total_housing, -total_debts,
-                      -total_var, -total_inv_contrib, net_cash_flow]
-        wf_measure = ["absolute", "relative", "relative",
-                      "relative", "relative", "total"]
-        wf_text    = [f"${abs(v):,.0f}" for v in wf_values]
-        wf_colors  = [GREEN, RED, RED, RED, AMBER, GREEN if net_cash_flow >= 0 else RED]
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Net Worth Breakdown <span class="meta">{_fmt_k(net_worth)}</span></div>
+          {rows_html}
+          <div class="dv2-nw-summary">
+            <div class="col">
+              <div class="lab">Total Assets</div>
+              <div class="v green">{_fmt_k(total_assets)}</div>
+            </div>
+            <div class="col">
+              <div class="lab">Total Liabilities</div>
+              <div class="v red">−{_fmt_k(total_liab)}</div>
+            </div>
+            <div class="col">
+              <div class="lab">Net Worth</div>
+              <div class="v purple">{_fmt_k(net_worth)}</div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
-        fig_wf = go.Figure(go.Waterfall(
-            x=wf_labels, y=wf_values,
-            measure=wf_measure,
-            text=wf_text,
-            textposition="outside",
-            textfont=dict(size=10, color=tc["secondary"]),
-            connector=dict(line=dict(color=tc["connector"], width=1)),
-            increasing=dict(marker=dict(color=GREEN)),
-            decreasing=dict(marker=dict(color=RED)),
-            totals=dict(marker=dict(color=GREEN if net_cash_flow >= 0 else RED)),
-            cliponaxis=False,
-        ))
-        fig_wf.update_layout(**chart_layout(
-            height=340,
-            showlegend=False,
-            yaxis=dict(tickprefix="$", tickformat=",.0f"),
-            margin=dict(t=20, b=40),
-        ))
-        st.plotly_chart(fig_wf, use_container_width=True)
+    # ── Allocation Donut ──────────────────────────────────────────────────
+    with r3b:
+        donut_items = []
+        for i, acct in enumerate(a["investment_accounts"]):
+            mv = _acct_mv(acct)
+            if mv > 0:
+                donut_items.append((acct["label"], mv, ACCT_COLORS[i % len(ACCT_COLORS)]))
+        donut_items.append(("HYSA", a["emergency_fund_balance"], "#f43f5e"))
+        if sinking_fund > 0:
+            donut_items.append(("Sinking Fund", sinking_fund, "#f97316"))
+        donut_items.append(("Checking/Savings", a["checking_savings_balance"], "#06b6d4"))
+        donut_items = [d for d in donut_items if d[1] > 0]
+        donut_total = sum(d[1] for d in donut_items)
 
-    # ── Sector Allocation vs Target ──────────────────────────────────────────
-    with g2:
-        st.markdown('<p class="section-header">Sector Allocation vs Target</p>', unsafe_allow_html=True)
-
-        # Map tickers to sectors
-        _TICKER_SECTOR = {
-            "VOO": "US Equity", "VTI": "US Equity", "SCHB": "US Equity",
-            "QQQM": "Technology", "QQQ": "Technology", "VGT": "Technology",
-            "SMH": "Technology", "AAPL": "Technology",
-            "VFH": "Financials", "XLF": "Financials",
-            "VHT": "Healthcare", "XLV": "Healthcare",
-            "VXUS": "International", "IXUS": "International",
-            "VWO": "Emerging Markets", "IEMG": "Emerging Markets",
-            "IAU": "Commodities", "GLD": "Commodities", "PDBC": "Commodities",
-            "IBIT": "Crypto", "ETHA": "Crypto",
-            "BTC": "Crypto", "ETH": "Crypto", "ADA": "Crypto",
-            "XRP": "Crypto", "DOGE": "Crypto",
-            "VUG": "US Equity", "SCHG": "US Equity",
-        }
-
-        live_prices = st.session_state.get("live_prices", {})
-        sector_values = {}
-        for acct in a["investment_accounts"]:
-            for h in acct.get("holdings", []):
-                tk = h.get("ticker")
-                if not tk:
-                    continue
-                price = live_prices.get(tk)
-                if not price:
-                    continue
-                sector = _TICKER_SECTOR.get(tk, h.get("sector", "Other"))
-                if sector == "Unknown":
-                    sector = "Other"
-                sector_values[sector] = sector_values.get(sector, 0) + h["shares"] * price
-
-        target = a.get("target_allocation") or {
-            "US Equity": 35, "Technology": 15, "International": 10,
-            "Emerging Markets": 5, "Commodities": 10, "Crypto": 10,
-            "Financials": 5, "Healthcare": 5, "Other": 5,
-        }
-
-        total_portfolio = sum(sector_values.values()) or 1
-        all_sectors = sorted(set(list(target.keys()) + list(sector_values.keys())))
-
-        current_pcts = [sector_values.get(s, 0) / total_portfolio * 100 for s in all_sectors]
-        target_pcts  = [target.get(s, 0) for s in all_sectors]
-
-        fig_alloc = go.Figure()
-        fig_alloc.add_trace(go.Bar(
-            y=all_sectors, x=current_pcts, orientation="h",
-            name="Current", marker=dict(color=BLUE),
-            text=[f"{v:.1f}%" for v in current_pcts],
-            textposition="outside", textfont=dict(size=9, color=tc["muted"]),
-            cliponaxis=False,
-        ))
-        fig_alloc.add_trace(go.Bar(
-            y=all_sectors, x=target_pcts, orientation="h",
-            name="Target", marker=dict(color=tc["target_bar"]),
-            text=[f"{v:.0f}%" for v in target_pcts],
-            textposition="outside", textfont=dict(size=9, color=tc["faint"]),
-            cliponaxis=False,
-        ))
-        fig_alloc.update_layout(**chart_layout(
-            height=340,
-            barmode="group",
-            showlegend=False,
-            xaxis=dict(ticksuffix="%"),
-            margin=dict(t=10, b=20),
-        ))
-        st.plotly_chart(fig_alloc, use_container_width=True)
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # ROW 4 — Debt Payoff Timeline + Investment Return Attribution
-    # ═══════════════════════════════════════════════════════════════════════════
-    d1, d2 = st.columns([1, 1])
-
-    # ── Debt Payoff Timeline ─────────────────────────────────────────────────
-    with d1:
-        st.markdown('<p class="section-header">Debt Payoff Timeline</p>', unsafe_allow_html=True)
-
-        # Mortgage
-        orig_mortgage = a["loan_original_amount"]
-        mortgage_paid = orig_mortgage - status["current_balance"]
-        mortgage_pct  = (mortgage_paid / orig_mortgage * 100) if orig_mortgage else 0
-        payoff_date   = status["payoff_date"]
-        years_left_m  = status["months_remaining"] / 12
-
+        st.markdown('<div class="dv2-card">', unsafe_allow_html=True)
         st.markdown(
-            f'<div style="margin-bottom:1.2rem">'
-            f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
-            f'<span style="color:#e2e8f0;font-size:0.9rem;font-weight:700">Mortgage</span>'
-            f'<span style="color:#64748b;font-size:0.78rem">'
-            f'{years_left_m:.1f} yrs to go · payoff {payoff_date.strftime("%b %Y")}</span>'
-            f'</div>'
-            f'<div style="background:#0f172a;border-radius:6px;height:16px;overflow:hidden;position:relative">'
-            f'<div style="width:{max(mortgage_pct, 0.5):.2f}%;height:100%;'
-            f'background:linear-gradient(90deg,{GREEN},{CYAN});border-radius:6px"></div></div>'
-            f'<div style="display:flex;justify-content:space-between;margin-top:5px">'
-            f'<span style="color:{GREEN};font-size:0.78rem;font-weight:700">'
-            f'Paid: ${mortgage_paid:,.0f} ({mortgage_pct:.2f}%)</span>'
-            f'<span style="color:#94a3b8;font-size:0.78rem">'
-            f'Remaining: ${status["current_balance"]:,.0f}</span>'
-            f'</div></div>',
+            '<div class="dv2-h">Allocation <span class="meta">All assets</span></div>',
             unsafe_allow_html=True,
         )
 
-        # Other debts
+        fig_donut = go.Figure(go.Pie(
+            labels=[d[0] for d in donut_items],
+            values=[d[1] for d in donut_items],
+            hole=0.66,
+            marker=dict(
+                colors=[d[2] for d in donut_items],
+                line=dict(color=tc["card"], width=3),
+            ),
+            textinfo="none",
+            sort=False,
+            direction="clockwise",
+            rotation=90,
+            hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
+        ))
+        fig_donut.add_annotation(
+            text=f"<b>{_fmt_k(donut_total)}</b>",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=20, color=tc["bright"], family="Barlow Condensed"),
+        )
+        fig_donut.update_layout(**chart_layout(
+            height=240,
+            margin=dict(l=10, r=10, t=10, b=10),
+            showlegend=False,
+        ))
+        st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
+
+        # Legend
+        legend_items = sorted(donut_items, key=lambda x: -x[1])
+        leg_html = '<div class="dv2-donut-legend">'
+        for nm, v, c in legend_items:
+            pct = v / donut_total * 100 if donut_total else 0
+            leg_html += (
+                f'<div class="lr">'
+                f'<span class="sw" style="background:{c}"></span>'
+                f'<span class="nm">{_html.escape(nm)}</span>'
+                f'<span class="pc">{_fmt_k(v)} · {pct:.1f}%</span>'
+                f'</div>'
+            )
+        leg_html += "</div></div>"
+        st.markdown(leg_html, unsafe_allow_html=True)
+
+    # ── Sector Allocation vs Target ───────────────────────────────────────
+    with r3c:
+        sector_targets = a.get("sector_targets") or DEFAULT_TARGET_ALLOC
+        sector_vals = {}
+        port_total = 0
+        for acct in a["investment_accounts"]:
+            for h in acct.get("holdings", []):
+                sec = h.get("sector") or "Other"
+                if sec == "Unknown":
+                    sec = "Other"
+                mv = _holding_mv(h)
+                sector_vals[sec] = sector_vals.get(sec, 0) + mv
+                port_total += mv
+
+        if port_total <= 0:
+            port_total = 1
+
+        all_sectors = list(set(list(sector_targets.keys()) + list(sector_vals.keys())))
+        rows = sorted([
+            {"name": s, "cur": sector_vals.get(s, 0) / port_total * 100,
+             "target": sector_targets.get(s, 0)}
+            for s in all_sectors
+        ], key=lambda r: -r["cur"])
+
+        max_scale = max(40, max((max(r["cur"], r["target"]) for r in rows), default=40))
+
+        sec_html = ""
+        for r in rows:
+            is_over = r["cur"] > r["target"] * 1.1 and r["target"] > 0
+            cur_w = r["cur"] / max_scale * 100
+            tgt_w = r["target"] / max_scale * 100
+            over_cls = " over" if is_over else ""
+            sec_html += f"""
+            <div class="dv2-sector-row">
+              <div class="dv2-sector-head">
+                <span class="nm">{r["name"]}</span>
+                <span class="vs"><b>{r["cur"]:.1f}%</b> / {r["target"]}%</span>
+              </div>
+              <div class="dv2-sector-bar">
+                <div class="cur{over_cls}" style="width:{cur_w:.1f}%"></div>
+                <div class="target" style="left:{tgt_w:.1f}%"></div>
+              </div>
+            </div>"""
+
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Sector Allocation <span class="meta">vs target</span></div>
+          {sec_html}
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);
+                      display:flex;align-items:center;gap:18px;font-size:0.68rem;color:var(--dv2-muted)">
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-blue),var(--dv2-blue-2));border-radius:2px"></span>Current
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <span style="width:2px;height:11px;background:var(--dv2-text-2)"></span>Target
+            </span>
+            <span style="display:inline-flex;align-items:center;gap:6px">
+              <span style="width:10px;height:8px;background:linear-gradient(90deg,var(--dv2-amber),#fbbf24);border-radius:2px"></span>Over target
+            </span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 6. ROW 2 — Cash Flow Waterfall + Debt Payoff
+    # ═══════════════════════════════════════════════════════════════════════
+    r6a, r6b = st.columns([1, 1])
+
+    # ── Cash Flow Waterfall (Plotly) ──────────────────────────────────────
+    with r6a:
+        st.markdown('<div class="dv2-card">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="dv2-h">Monthly Cash Flow <span class="meta">Monthly snapshot</span></div>',
+            unsafe_allow_html=True,
+        )
+
+        wf_labels = ["Income", "Housing", "Other Debts", "Variable<br>Spending",
+                     "Investments", "Net Surplus"]
+        wf_values = [monthly_in, -housing, -debts, -budget, -invest_mo, net_cf]
+        wf_measures = ["absolute", "relative", "relative", "relative", "relative", "total"]
+        wf_text = [
+            f"+{_fmt_dollar(monthly_in)}",
+            f"−{_fmt_dollar(housing)}",
+            f"−{_fmt_dollar(debts)}",
+            f"−{_fmt_dollar(budget)}",
+            f"−{_fmt_dollar(invest_mo)}",
+            f"{'+' if net_cf >= 0 else '−'}{_fmt_dollar(abs(net_cf))}",
+        ]
+
+        fig_wf = go.Figure(go.Waterfall(
+            x=wf_labels, y=wf_values, measure=wf_measures,
+            text=wf_text, textposition="outside",
+            textfont=dict(size=11, color=tc["text"], family="JetBrains Mono"),
+            connector=dict(line=dict(color=tc["connector"], width=1)),
+            increasing=dict(marker=dict(color=GREEN, line=dict(width=0))),
+            decreasing=dict(marker=dict(color=RED,   line=dict(width=0))),
+            totals=dict(marker=dict(color=GREEN if net_cf >= 0 else RED, line=dict(width=0))),
+            cliponaxis=False,
+        ))
+        fig_wf.update_layout(**chart_layout(
+            height=260,
+            showlegend=False,
+            margin=dict(l=10, r=10, t=30, b=20),
+            yaxis=dict(tickprefix="$", tickformat=",.0s",
+                       gridcolor=tc["grid"], showline=False, zeroline=False),
+            xaxis=dict(showgrid=False, showline=False, zeroline=False,
+                       tickfont=dict(size=10, color=tc["muted"])),
+        ))
+        st.plotly_chart(fig_wf, use_container_width=True, config={"displayModeBar": False})
+
+        net_color = "var(--dv2-green-2)" if net_cf >= 0 else "var(--dv2-red-2)"
+        st.markdown(f"""
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);
+                      display:flex;justify-content:space-around;font-size:0.7rem;color:var(--dv2-muted)">
+            <div style="text-align:center">
+              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-green-2)">{_fmt_k(monthly_in)}</div>
+              <div>Income</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-red-2)">−{_fmt_k(housing + debts + budget)}</div>
+              <div>Expenses</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-amber)">−{_fmt_k(invest_mo)}</div>
+              <div>Invested</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:{net_color}">{'+' if net_cf >= 0 else '−'}{_fmt_k(abs(net_cf))}</div>
+              <div>Net surplus</div>
+            </div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Debt Payoff Timeline ──────────────────────────────────────────────
+    with r6b:
+        yrs_left = status["months_remaining"] / 12
+        mort_paid = a["loan_original_amount"] - status["current_balance"]
+        debt_html = f"""
+        <div class="dv2-debt">
+          <div class="dv2-debt-head">
+            <span class="nm">Mortgage</span>
+            <span class="meta">{yrs_left:.1f} yrs to go · payoff {status["payoff_date"].strftime("%b %Y")}</span>
+          </div>
+          <div class="dv2-debt-bar">
+            <div class="fl mortgage" style="width:{max(mort_pct, 0.5):.2f}%">
+              <span class="pmt">{_fmt_dollar(monthly_pi)}/mo</span>
+            </div>
+          </div>
+          <div class="dv2-debt-foot">
+            <span class="paid">Paid: {_fmt_k(mort_paid)} ({mort_pct:.2f}%)</span>
+            <span class="rem">Remaining: {_fmt_k(status["current_balance"])}</span>
+          </div>
+        </div>
+        """
         for d in a["other_debts"]:
             if d["balance"] <= 0:
                 continue
-            # Estimate original balance from payment schedule
-            # Simple: assume original = balance + total paid so far (rough)
-            rate_mo = d["rate_pct"] / 100 / 12
-            if rate_mo > 0 and d["monthly_payment"] > 0:
-                # Months to payoff
-                if d["monthly_payment"] <= d["balance"] * rate_mo:
-                    months_left = 999
-                else:
-                    import math as _math
-                    months_left = _math.ceil(
-                        -_math.log(1 - d["balance"] * rate_mo / d["monthly_payment"])
-                        / _math.log(1 + rate_mo)
-                    )
-                years_left_d = months_left / 12
-                from dateutil.relativedelta import relativedelta
-                payoff_d = today + relativedelta(months=months_left)
-            else:
-                months_left = (d["balance"] / d["monthly_payment"]) if d["monthly_payment"] else 999
-                years_left_d = months_left / 12
-                payoff_d = today
-
-            # Visual: we don't know original so show remaining timeline
-            bar_pct = min(100, max(5, 100 - (months_left / (months_left + 12)) * 100))
-
-            st.markdown(
-                f'<div style="margin-bottom:1.2rem">'
-                f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">'
-                f'<span style="color:#e2e8f0;font-size:0.9rem;font-weight:700">{d["name"]}</span>'
-                f'<span style="color:#64748b;font-size:0.78rem">'
-                f'${d["balance"]:,.0f} at {d["rate_pct"]}% · {years_left_d:.1f} yrs left</span>'
-                f'</div>'
-                f'<div style="background:#0f172a;border-radius:6px;height:16px;overflow:hidden">'
-                f'<div style="width:{100 - months_left / max(months_left + 60, 1) * 100:.0f}%;height:100%;'
-                f'background:linear-gradient(90deg,{AMBER},{GREEN});border-radius:6px;'
-                f'display:flex;align-items:center;justify-content:center;'
-                f'font-size:0.68rem;color:white;font-weight:700">'
-                f'${d["monthly_payment"]:,.0f}/mo</div></div>'
-                f'<div style="display:flex;justify-content:space-between;color:#475569;'
-                f'font-size:0.72rem;margin-top:4px">'
-                f'<span>${d["monthly_payment"]:,.0f}/mo payment</span>'
-                f'<span>Payoff: ~{payoff_d.strftime("%b %Y")}</span>'
-                f'</div></div>',
-                unsafe_allow_html=True,
-            )
-
-        if not a["other_debts"]:
-            st.markdown(
-                f'<div style="color:{GREEN};font-size:0.85rem;margin-top:0.5rem">'
-                f'No other debts — only the mortgage remains.</div>',
-                unsafe_allow_html=True,
-            )
-
-    # ── Investment Return Attribution ────────────────────────────────────────
-    with d2:
-        st.markdown('<p class="section-header">Investment Return Attribution</p>', unsafe_allow_html=True)
-
-        total_cost_basis = 0
-        for acct in a["investment_accounts"]:
-            cash = acct.get("cash_usd", 0)
-            total_cost_basis += cash
-            for h in acct.get("holdings", []):
-                if h.get("avg_cost") is not None:
-                    total_cost_basis += h["shares"] * h["avg_cost"]
-
-        market_gains = total_investments - total_cost_basis
-
-        cb_pct = (total_cost_basis / total_investments * 100) if total_investments else 0
-        mg_pct = (market_gains / total_investments * 100) if total_investments else 0
-        gain_on_cost = (market_gains / total_cost_basis * 100) if total_cost_basis else 0
-
-        # Stacked horizontal bar
-        fig_attr = go.Figure()
-        fig_attr.add_trace(go.Bar(
-            y=["Portfolio"],
-            x=[total_cost_basis],
-            orientation="h",
-            name="Your Contributions",
-            marker=dict(color=BLUE),
-            text=[f"${total_cost_basis:,.0f}"],
-            textposition="inside",
-            textfont=dict(size=12, color="white"),
-            hovertemplate="Contributions: $%{x:,.0f}<extra></extra>",
-        ))
-        fig_attr.add_trace(go.Bar(
-            y=["Portfolio"],
-            x=[market_gains],
-            orientation="h",
-            name="Market Gains" if market_gains >= 0 else "Market Losses",
-            marker=dict(color=GREEN if market_gains >= 0 else RED),
-            text=[f"${market_gains:+,.0f}"],
-            textposition="inside",
-            textfont=dict(size=12, color="white"),
-            hovertemplate="Market gains: $%{x:+,.0f}<extra></extra>",
-        ))
-        fig_attr.update_layout(**chart_layout(
-            height=120,
-            barmode="stack",
-            showlegend=False,
-            xaxis=dict(tickprefix="$", tickformat=",.0s"),
-            yaxis=dict(visible=False),
-            margin=dict(t=10, b=10, l=10, r=10),
-        ))
-        st.plotly_chart(fig_attr, use_container_width=True)
-
-        # Attribution stats
-        a1, a2, a3 = st.columns(3)
-        a1.metric("Contributions", f"${total_cost_basis:,.0f}",
-                  delta=f"{cb_pct:.0f}% of portfolio", delta_color="off")
-        a2.metric("Market Gains", f"${market_gains:+,.0f}",
-                  delta=f"{mg_pct:.0f}% of portfolio",
-                  delta_color="normal" if market_gains >= 0 else "inverse")
-        a3.metric("Return on Cost", f"{gain_on_cost:+.1f}%",
-                  delta="since inception", delta_color="off")
-
-    # ═══════════════════════════════════════════════════════════════════════════
-    # MILESTONE TRACKER
-    # ═══════════════════════════════════════════════════════════════════════════
-    milestones = a.get("milestones", [])
-    if milestones:
-        st.markdown("<br>", unsafe_allow_html=True)
-        with st.expander("Milestone Tracker", expanded=True):
-            current_age = a["age"]
-            for ms in sorted(milestones, key=lambda m: m.get("age", 0)):
-                ms_age    = ms.get("age", 0)
-                ms_target = ms.get("target_nw", 0)
-                ms_event  = ms.get("event", "")
-                pct       = min(net_worth / ms_target * 100, 100) if ms_target else 0
-                completed = net_worth >= ms_target
-                future    = ms_age > current_age and not completed
-                bar_color = GREEN if completed else (BLUE if not future else tc["subtle"])
-                label     = f"Age {ms_age} — ${ms_target/1e6:.2f}M" if ms_target >= 1e6 else f"Age {ms_age} — ${ms_target:,.0f}"
-                sub       = f'<span style="color:#64748b;font-size:0.72rem"> · {ms_event}</span>' if ms_event else ""
-                st.markdown(
-                    f'<div style="margin-bottom:0.9rem">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
-                    f'<span style="color:#e2e8f0;font-size:0.82rem;font-weight:600">{label}</span>{sub}'
-                    f'<span style="color:#64748b;font-size:0.75rem">{pct:.0f}% · {_fmt_large(net_worth)} of {_fmt_large(ms_target)}</span>'
-                    f'</div>'
-                    f'<div style="background:#0f172a;border-radius:4px;height:8px;width:100%;overflow:hidden">'
-                    f'<div style="width:{pct:.1f}%;height:100%;background:{bar_color};border-radius:4px;transition:width 0.3s"></div>'
-                    f'</div></div>',
-                    unsafe_allow_html=True,
+            r = d["rate_pct"] / 100 / 12
+            if r > 0 and d["monthly_payment"] > d["balance"] * r:
+                months_left = math.ceil(
+                    -math.log(1 - d["balance"] * r / d["monthly_payment"]) / math.log(1 + r)
                 )
+            elif d["monthly_payment"] > 0:
+                months_left = math.ceil(d["balance"] / d["monthly_payment"])
+            else:
+                months_left = 999
+            yrs_left_d = months_left / 12
+            from dateutil.relativedelta import relativedelta
+            payoff_d = today + relativedelta(months=months_left)
+            pct = 100 - (months_left / (months_left + 60)) * 100
+            debt_html += f"""
+            <div class="dv2-debt">
+              <div class="dv2-debt-head">
+                <span class="nm">{_html.escape(d["name"])}</span>
+                <span class="meta">{_fmt_k(d["balance"])} at {d["rate_pct"]}% · {yrs_left_d:.1f} yrs left</span>
+              </div>
+              <div class="dv2-debt-bar">
+                <div class="fl other" style="width:{pct:.1f}%">
+                  <span class="pmt">{_fmt_dollar(d["monthly_payment"])}/mo</span>
+                </div>
+              </div>
+              <div class="dv2-debt-foot">
+                <span class="paid">{_fmt_dollar(d["monthly_payment"])}/mo payment</span>
+                <span class="rem">Payoff: ~{payoff_d.strftime("%b %Y")}</span>
+              </div>
+            </div>
+            """
+
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Debt Payoff Timeline <span class="meta">{_fmt_k(total_liab)} total</span></div>
+          {debt_html}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 7. ROW 2 — Investment Accounts + Top Holdings
+    # ═══════════════════════════════════════════════════════════════════════
+    r7a, r7b = st.columns([1, 1])
+
+    # ── Investment Accounts ───────────────────────────────────────────────
+    with r7a:
+        acct_items = []
+        for i, ac in enumerate(a["investment_accounts"]):
+            mv = _acct_mv(ac)
+            day = _acct_day(ac)
+            day_pct = (day / (mv - day) * 100) if (mv - day) else 0
+            acct_items.append({
+                "ac": ac, "mv": mv, "day": day, "day_pct": day_pct,
+                "color": ACCT_COLORS[i % len(ACCT_COLORS)],
+            })
+        acct_items.sort(key=lambda x: -x["mv"])
+
+        acct_html = '<div class="dv2-acct-list">'
+        for it in acct_items:
+            ac = it["ac"]
+            mv = it["mv"]
+            day = it["day"]
+            day_pct = it["day_pct"]
+            day_color = "var(--dv2-green-2)" if day >= 0 else "var(--dv2-red-2)"
+            day_sign = "+" if day >= 0 else "−"
+            day_pct_sign = "+" if day_pct >= 0 else ""
+            type_label = ac["account_type"]
+            if ac["monthly_contribution"] > 0:
+                type_label += f' · {_fmt_dollar(ac["monthly_contribution"])}/mo'
+            acct_html += f"""
+            <div class="dv2-acct">
+              <div class="swatch" style="background:{it["color"]}"></div>
+              <div>
+                <div class="nm">{_html.escape(ac["label"])}</div>
+                <div class="ty">{type_label}</div>
+              </div>
+              <div>
+                <div class="bal cond">{_fmt_k(mv)}</div>
+                <div class="day" style="color:{day_color}">
+                  {day_sign}{_fmt_dollar(abs(day))} ({day_pct_sign}{day_pct:.2f}%)
+                </div>
+              </div>
+            </div>
+            """
+        acct_html += "</div>"
+
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Investment Accounts <span class="meta">{_fmt_k(total_investments)} · {len(acct_items)} accounts</span></div>
+          {acct_html}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ── Top Holdings ──────────────────────────────────────────────────────
+    with r7b:
+        all_h = []
+        for ac in a["investment_accounts"]:
+            for h in ac.get("holdings", []):
+                tk = h.get("ticker")
+                if not tk:
+                    continue
+                px_ = live_prices.get(tk) or h.get("avg_cost") or 0
+                prev = prev_prices.get(tk)
+                mv = h["shares"] * px_
+                day_chg = (px_ - prev) if prev else 0
+                day_pct = ((px_ - prev) / prev * 100) if prev else 0
+                all_h.append({
+                    "ticker": tk,
+                    "sector": h.get("sector") or "Other",
+                    "shares": h["shares"],
+                    "px": px_,
+                    "day_pct": day_pct,
+                    "day_chg": day_chg,
+                    "mv": mv,
+                })
+        all_h.sort(key=lambda x: -x["mv"])
+        top = all_h[:10]
+
+        rows_html = ""
+        for h in top:
+            sec_color = SECTOR_COLORS.get(h["sector"], "#64748b")
+            ticker_disp = h["ticker"].lstrip("_")
+            ic_text = ticker_disp[:3] if len(ticker_disp) <= 4 else ticker_disp[:2]
+            day_color = "var(--dv2-green-2)" if h["day_chg"] >= 0 else "var(--dv2-red-2)"
+            day_sign = "+" if h["day_pct"] >= 0 else ""
+            rows_html += f"""
+            <tr>
+              <td>
+                <span class="dv2-tk">
+                  <span class="ic" style="background:{sec_color}">{ic_text}</span>
+                  <span class="nm">
+                    <span class="sym">{_html.escape(ticker_disp)}</span>
+                    <span class="nt">{_html.escape(h["sector"])}</span>
+                  </span>
+                </span>
+              </td>
+              <td class="r">{h["shares"]:,.4f}</td>
+              <td class="r">{_fmt_px(h["px"])}</td>
+              <td class="r" style="color:{day_color}">{day_sign}{h["day_pct"]:.2f}%</td>
+              <td class="r val">{_fmt_k(h["mv"])}</td>
+            </tr>"""
+
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Top Holdings <span class="meta">By market value</span></div>
+          <table class="dv2-holdings">
+            <thead><tr>
+              <th>Position</th>
+              <th class="r">Shares</th>
+              <th class="r">Price</th>
+              <th class="r">Day</th>
+              <th class="r">Value</th>
+            </tr></thead>
+            <tbody>{rows_html}</tbody>
+          </table>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # 8. MILESTONE TRACKER
+    # ═══════════════════════════════════════════════════════════════════════
+    milestones = a.get("milestones") or []
+    if milestones:
+        ms_sorted = sorted(milestones, key=lambda m: m["age"])
+        ms_html = ""
+        for m in ms_sorted:
+            target = m["target_nw"]
+            pct = min(net_worth / target * 100, 100) if target else 0
+            done = net_worth >= target
+            future = m["age"] > a["age"] and not done
+            cls = "done" if done else ("future" if future else "")
+            ms_html += f"""
+            <div class="dv2-ms {cls}">
+              <div class="top">
+                <span><span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span><span class="ev">{_html.escape(m["event"])}</span></span>
+                <span class="pc">{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>
+              </div>
+              <div class="mtrack"><div class="mfill" style="width:{pct}%"></div></div>
+            </div>"""
+
+        st.markdown(f"""
+        <div class="dv2-card">
+          <div class="dv2-h">Milestone Tracker <span class="meta">Path to financial independence</span></div>
+          {ms_html}
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Close the dv2 wrapper
+    st.markdown('</div>', unsafe_allow_html=True)

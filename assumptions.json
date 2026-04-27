@@ -374,5 +374,43 @@
   "lp_double_years": 5,
   "annual_bonus": 15000,
   "lp_net_pct": 75,
-  "_data_version": 3
+  "_data_version": 4,
+  "milestones": [
+    {
+      "age": 30,
+      "target_nw": 1500000,
+      "event": "First $1.5M"
+    },
+    {
+      "age": 35,
+      "target_nw": 2500000,
+      "event": "Coast FI checkpoint"
+    },
+    {
+      "age": 45,
+      "target_nw": 5000000,
+      "event": "$5M portfolio"
+    },
+    {
+      "age": 55,
+      "target_nw": 8000000,
+      "event": "W2 retirement target"
+    },
+    {
+      "age": 65,
+      "target_nw": 12000000,
+      "event": "Full retirement"
+    }
+  ],
+  "sector_targets": {
+    "US Equity": 35,
+    "Technology": 15,
+    "International": 10,
+    "Emerging Markets": 5,
+    "Commodities": 10,
+    "Crypto": 10,
+    "Financials": 5,
+    "Healthcare": 5,
+    "Other": 5
+  }
 }
