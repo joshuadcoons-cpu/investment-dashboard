@@ -158,7 +158,6 @@ def render():
 
     # Inject the redesigned dashboard CSS
     inject_dashboard_v2_css()
-    st.markdown('<div class="dv2">', unsafe_allow_html=True)
 
     today = date.today()
 
@@ -349,98 +348,97 @@ def render():
         # Hero header HTML (eyebrow + value + delta)
         delta_cls = "up" if is_up else "dn"
         sign      = "+" if is_up else "−"
-        st.markdown(f"""
-        <div class="dv2-card" style="margin-bottom:0;padding-bottom:0">
-          <div class="dv2-eyebrow">Net Worth · Growth
-            <span class="dv2-live"><span class="pulse"></span>LIVE</span>
-          </div>
-          <div class="dv2-hero-value">{_fmt_dollar(net_worth)}</div>
-          <div class="dv2-delta {delta_cls}">
-            <span class="amt mono">{sign}{_fmt_dollar(abs(change))}</span>
-            <span class="pct mono">{sign if is_up else "−"}{abs(chg_pct):.2f}%</span>
-            <span class="ts">past {rng}</span>
-          </div>
-        """, unsafe_allow_html=True)
 
-        # Plotly growth chart
-        fig = go.Figure()
-        fill_rgba = ("rgba(16,185,129,0.18)" if is_up else "rgba(239,68,68,0.18)")
-        fade_rgba = ("rgba(16,185,129,0)" if is_up else "rgba(239,68,68,0)")
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                '<div class="dv2-eyebrow">Net Worth · Growth '
+                '<span class="dv2-live"><span class="pulse"></span>LIVE</span>'
+                '</div>'
+                f'<div class="dv2-hero-value">{_fmt_dollar(net_worth)}</div>'
+                f'<div class="dv2-delta {delta_cls}">'
+                f'<span class="amt mono">{sign}{_fmt_dollar(abs(change))}</span>'
+                f'<span class="pct mono">{sign if is_up else "−"}{abs(chg_pct):.2f}%</span>'
+                f'<span class="ts">past {rng}</span>'
+                '</div></div>'
+            )
 
-        # Glow line (thicker, lower opacity)
-        fig.add_trace(go.Scatter(
-            x=times, y=vals,
-            mode="lines",
-            line=dict(color=stroke, width=5, shape="spline", smoothing=0.6),
-            opacity=0.25, hoverinfo="skip", showlegend=False,
-        ))
-        # Filled area
-        fig.add_trace(go.Scatter(
-            x=times, y=vals,
-            mode="lines",
-            line=dict(color=stroke, width=2, shape="spline", smoothing=0.6),
-            fill="tozeroy", fillcolor=fill_rgba,
-            hovertemplate="<b>%{x|%a %b %d, %I:%M %p}</b><br>"
-                          "$%{y:,.0f}<extra></extra>",
-            hoverlabel=dict(
-                bgcolor="rgba(15,23,42,0.95)",
-                bordercolor=tc["border"],
-                font=dict(family="JetBrains Mono", size=12, color="#f1f5f9"),
-            ),
-            showlegend=False,
-            name="Net Worth",
-        ))
-        # Endpoint dot
-        fig.add_trace(go.Scatter(
-            x=[times[-1]], y=[end_v],
-            mode="markers",
-            marker=dict(size=10, color=stroke,
-                        line=dict(color="rgba(255,255,255,0.9)", width=2)),
-            hoverinfo="skip", showlegend=False,
-        ))
+            # Plotly growth chart
+            fig = go.Figure()
+            fill_rgba = ("rgba(16,185,129,0.18)" if is_up else "rgba(239,68,68,0.18)")
 
-        # Y-axis range — tight around the data
-        y_min = min(vals) * 0.996
-        y_max = max(vals) * 1.004
+            # Glow line (thicker, lower opacity)
+            fig.add_trace(go.Scatter(
+                x=times, y=vals,
+                mode="lines",
+                line=dict(color=stroke, width=5, shape="spline", smoothing=0.6),
+                opacity=0.25, hoverinfo="skip", showlegend=False,
+            ))
+            # Filled area
+            fig.add_trace(go.Scatter(
+                x=times, y=vals,
+                mode="lines",
+                line=dict(color=stroke, width=2, shape="spline", smoothing=0.6),
+                fill="tozeroy", fillcolor=fill_rgba,
+                hovertemplate="<b>%{x|%a %b %d, %I:%M %p}</b><br>"
+                              "$%{y:,.0f}<extra></extra>",
+                hoverlabel=dict(
+                    bgcolor="rgba(15,23,42,0.95)",
+                    bordercolor=tc["border"],
+                    font=dict(family="JetBrains Mono", size=12, color="#f1f5f9"),
+                ),
+                showlegend=False,
+                name="Net Worth",
+            ))
+            # Endpoint dot
+            fig.add_trace(go.Scatter(
+                x=[times[-1]], y=[end_v],
+                mode="markers",
+                marker=dict(size=10, color=stroke,
+                            line=dict(color="rgba(255,255,255,0.9)", width=2)),
+                hoverinfo="skip", showlegend=False,
+            ))
 
-        fig.update_layout(**chart_layout(
-            height=280,
-            margin=dict(l=10, r=10, t=10, b=20),
-            showlegend=False,
-            xaxis=dict(
-                showgrid=False, showline=False, zeroline=False,
-                tickfont=dict(size=10, color=tc["faint"]),
-            ),
-            yaxis=dict(
-                range=[y_min, y_max],
-                tickprefix="$", tickformat=",.0s",
-                gridcolor=tc["grid"], showline=False, zeroline=False,
-                tickfont=dict(size=10, color=tc["faint"]),
-            ),
-            hovermode="x unified",
-        ))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            # Y-axis range — tight around the data
+            y_min = min(vals) * 0.996
+            y_max = max(vals) * 1.004
 
-        # Footer meta strip
-        period_high = max(vals)
-        period_low  = min(vals)
-        period_rng  = period_high - period_low
-        vol_pct     = (period_rng / start_v * 100) if start_v else 0
-        chg_color   = "var(--dv2-green-2)" if is_up else "var(--dv2-red-2)"
-        st.markdown(f"""
-          <div class="dv2-meta">
-            <div class="m"><span class="lab">Open</span><b>{_fmt_k(start_v)}</b></div>
-            <div class="m"><span class="lab">High</span><b>{_fmt_k(period_high)}</b></div>
-            <div class="m"><span class="lab">Low</span><b>{_fmt_k(period_low)}</b></div>
-            <div class="m"><span class="lab">Range</span><b>{_fmt_k(period_rng)}</b></div>
-            <div class="m"><span class="lab">Volatility</span><b>{vol_pct:.2f}%</b></div>
-            <div class="m" style="margin-left:auto;color:{chg_color}">
-              <span class="lab">Period change</span>
-              <b style="color:inherit">{sign}{_fmt_k(abs(change))} ({sign}{abs(chg_pct):.2f}%)</b>
-            </div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+            fig.update_layout(**chart_layout(
+                height=280,
+                margin=dict(l=10, r=10, t=10, b=20),
+                showlegend=False,
+                xaxis=dict(
+                    showgrid=False, showline=False, zeroline=False,
+                    tickfont=dict(size=10, color=tc["faint"]),
+                ),
+                yaxis=dict(
+                    range=[y_min, y_max],
+                    tickprefix="$", tickformat=",.0s",
+                    gridcolor=tc["grid"], showline=False, zeroline=False,
+                    tickfont=dict(size=10, color=tc["faint"]),
+                ),
+                hovermode="x unified",
+            ))
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+            # Footer meta strip
+            period_high = max(vals)
+            period_low  = min(vals)
+            period_rng  = period_high - period_low
+            vol_pct     = (period_rng / start_v * 100) if start_v else 0
+            chg_color   = "var(--dv2-green-2)" if is_up else "var(--dv2-red-2)"
+            st.html(
+                '<div class="dv2 dv2-meta">'
+                f'<div class="m"><span class="lab">Open</span><b>{_fmt_k(start_v)}</b></div>'
+                f'<div class="m"><span class="lab">High</span><b>{_fmt_k(period_high)}</b></div>'
+                f'<div class="m"><span class="lab">Low</span><b>{_fmt_k(period_low)}</b></div>'
+                f'<div class="m"><span class="lab">Range</span><b>{_fmt_k(period_rng)}</b></div>'
+                f'<div class="m"><span class="lab">Volatility</span><b>{vol_pct:.2f}%</b></div>'
+                f'<div class="m" style="margin-left:auto;color:{chg_color}">'
+                '<span class="lab">Period change</span>'
+                f'<b style="color:inherit">{sign}{_fmt_k(abs(change))} ({sign}{abs(chg_pct):.2f}%)</b>'
+                '</div></div>'
+            )
 
     with hero_r:
         # Snapshot card
@@ -659,52 +657,52 @@ def render():
         donut_items = [d for d in donut_items if d[1] > 0]
         donut_total = sum(d[1] for d in donut_items)
 
-        st.markdown('<div class="dv2-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="dv2-h">Allocation <span class="meta">All assets</span></div>',
-            unsafe_allow_html=True,
-        )
-
-        fig_donut = go.Figure(go.Pie(
-            labels=[d[0] for d in donut_items],
-            values=[d[1] for d in donut_items],
-            hole=0.66,
-            marker=dict(
-                colors=[d[2] for d in donut_items],
-                line=dict(color=tc["card"], width=3),
-            ),
-            textinfo="none",
-            sort=False,
-            direction="clockwise",
-            rotation=90,
-            hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
-        ))
-        fig_donut.add_annotation(
-            text=f"<b>{_fmt_k(donut_total)}</b>",
-            x=0.5, y=0.5, showarrow=False,
-            font=dict(size=20, color=tc["bright"], family="Barlow Condensed"),
-        )
-        fig_donut.update_layout(**chart_layout(
-            height=240,
-            margin=dict(l=10, r=10, t=10, b=10),
-            showlegend=False,
-        ))
-        st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
-
-        # Legend
-        legend_items = sorted(donut_items, key=lambda x: -x[1])
-        leg_html = '<div class="dv2-donut-legend">'
-        for nm, v, c in legend_items:
-            pct = v / donut_total * 100 if donut_total else 0
-            leg_html += (
-                f'<div class="lr">'
-                f'<span class="sw" style="background:{c}"></span>'
-                f'<span class="nm">{_html.escape(nm)}</span>'
-                f'<span class="pc">{_fmt_k(v)} · {pct:.1f}%</span>'
-                f'</div>'
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2 dv2-h">Allocation '
+                '<span class="meta">All assets</span></div>'
             )
-        leg_html += "</div></div>"
-        st.markdown(leg_html, unsafe_allow_html=True)
+
+            fig_donut = go.Figure(go.Pie(
+                labels=[d[0] for d in donut_items],
+                values=[d[1] for d in donut_items],
+                hole=0.66,
+                marker=dict(
+                    colors=[d[2] for d in donut_items],
+                    line=dict(color=tc["card"], width=3),
+                ),
+                textinfo="none",
+                sort=False,
+                direction="clockwise",
+                rotation=90,
+                hovertemplate="<b>%{label}</b><br>$%{value:,.0f}<br>%{percent}<extra></extra>",
+            ))
+            fig_donut.add_annotation(
+                text=f"<b>{_fmt_k(donut_total)}</b>",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=20, color=tc["bright"], family="Barlow Condensed"),
+            )
+            fig_donut.update_layout(**chart_layout(
+                height=240,
+                margin=dict(l=10, r=10, t=10, b=10),
+                showlegend=False,
+            ))
+            st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
+
+            # Legend
+            legend_items = sorted(donut_items, key=lambda x: -x[1])
+            leg_html = '<div class="dv2 dv2-donut-legend">'
+            for nm, v, c in legend_items:
+                pct = v / donut_total * 100 if donut_total else 0
+                leg_html += (
+                    f'<div class="lr">'
+                    f'<span class="sw" style="background:{c}"></span>'
+                    f'<span class="nm">{_html.escape(nm)}</span>'
+                    f'<span class="pc">{_fmt_k(v)} · {pct:.1f}%</span>'
+                    f'</div>'
+                )
+            leg_html += "</div>"
+            st.html(leg_html)
 
     # ── Sector Allocation vs Target ───────────────────────────────────────
     with r3c:
@@ -776,69 +774,64 @@ def render():
 
     # ── Cash Flow Waterfall (Plotly) ──────────────────────────────────────
     with r6a:
-        st.markdown('<div class="dv2-card">', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="dv2-h">Monthly Cash Flow <span class="meta">Monthly snapshot</span></div>',
-            unsafe_allow_html=True,
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2 dv2-h">Monthly Cash Flow '
+                '<span class="meta">Monthly snapshot</span></div>'
+            )
 
-        wf_labels = ["Income", "Housing", "Other Debts", "Variable<br>Spending",
-                     "Investments", "Net Surplus"]
-        wf_values = [monthly_in, -housing, -debts, -budget, -invest_mo, net_cf]
-        wf_measures = ["absolute", "relative", "relative", "relative", "relative", "total"]
-        wf_text = [
-            f"+{_fmt_dollar(monthly_in)}",
-            f"−{_fmt_dollar(housing)}",
-            f"−{_fmt_dollar(debts)}",
-            f"−{_fmt_dollar(budget)}",
-            f"−{_fmt_dollar(invest_mo)}",
-            f"{'+' if net_cf >= 0 else '−'}{_fmt_dollar(abs(net_cf))}",
-        ]
+            wf_labels = ["Income", "Housing", "Other Debts", "Variable<br>Spending",
+                         "Investments", "Net Surplus"]
+            wf_values = [monthly_in, -housing, -debts, -budget, -invest_mo, net_cf]
+            wf_measures = ["absolute", "relative", "relative", "relative", "relative", "total"]
+            wf_text = [
+                f"+{_fmt_dollar(monthly_in)}",
+                f"−{_fmt_dollar(housing)}",
+                f"−{_fmt_dollar(debts)}",
+                f"−{_fmt_dollar(budget)}",
+                f"−{_fmt_dollar(invest_mo)}",
+                f"{'+' if net_cf >= 0 else '−'}{_fmt_dollar(abs(net_cf))}",
+            ]
 
-        fig_wf = go.Figure(go.Waterfall(
-            x=wf_labels, y=wf_values, measure=wf_measures,
-            text=wf_text, textposition="outside",
-            textfont=dict(size=11, color=tc["text"], family="JetBrains Mono"),
-            connector=dict(line=dict(color=tc["connector"], width=1)),
-            increasing=dict(marker=dict(color=GREEN, line=dict(width=0))),
-            decreasing=dict(marker=dict(color=RED,   line=dict(width=0))),
-            totals=dict(marker=dict(color=GREEN if net_cf >= 0 else RED, line=dict(width=0))),
-            cliponaxis=False,
-        ))
-        fig_wf.update_layout(**chart_layout(
-            height=260,
-            showlegend=False,
-            margin=dict(l=10, r=10, t=30, b=20),
-            yaxis=dict(tickprefix="$", tickformat=",.0s",
-                       gridcolor=tc["grid"], showline=False, zeroline=False),
-            xaxis=dict(showgrid=False, showline=False, zeroline=False,
-                       tickfont=dict(size=10, color=tc["muted"])),
-        ))
-        st.plotly_chart(fig_wf, use_container_width=True, config={"displayModeBar": False})
+            fig_wf = go.Figure(go.Waterfall(
+                x=wf_labels, y=wf_values, measure=wf_measures,
+                text=wf_text, textposition="outside",
+                textfont=dict(size=11, color=tc["text"], family="JetBrains Mono"),
+                connector=dict(line=dict(color=tc["connector"], width=1)),
+                increasing=dict(marker=dict(color=GREEN, line=dict(width=0))),
+                decreasing=dict(marker=dict(color=RED,   line=dict(width=0))),
+                totals=dict(marker=dict(color=GREEN if net_cf >= 0 else RED, line=dict(width=0))),
+                cliponaxis=False,
+            ))
+            fig_wf.update_layout(**chart_layout(
+                height=260,
+                showlegend=False,
+                margin=dict(l=10, r=10, t=30, b=20),
+                yaxis=dict(tickprefix="$", tickformat=",.0s",
+                           gridcolor=tc["grid"], showline=False, zeroline=False),
+                xaxis=dict(showgrid=False, showline=False, zeroline=False,
+                           tickfont=dict(size=10, color=tc["muted"])),
+            ))
+            st.plotly_chart(fig_wf, use_container_width=True, config={"displayModeBar": False})
 
-        net_color = "var(--dv2-green-2)" if net_cf >= 0 else "var(--dv2-red-2)"
-        st.markdown(f"""
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);
-                      display:flex;justify-content:space-around;font-size:0.7rem;color:var(--dv2-muted)">
-            <div style="text-align:center">
-              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-green-2)">{_fmt_k(monthly_in)}</div>
-              <div>Income</div>
-            </div>
-            <div style="text-align:center">
-              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-red-2)">−{_fmt_k(housing + debts + budget)}</div>
-              <div>Expenses</div>
-            </div>
-            <div style="text-align:center">
-              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:var(--dv2-amber)">−{_fmt_k(invest_mo)}</div>
-              <div>Invested</div>
-            </div>
-            <div style="text-align:center">
-              <div style="font-family:'Barlow Condensed';font-size:1.25rem;font-weight:700;color:{net_color}">{'+' if net_cf >= 0 else '−'}{_fmt_k(abs(net_cf))}</div>
-              <div>Net surplus</div>
-            </div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+            net_color = "var(--dv2-green-2)" if net_cf >= 0 else "var(--dv2-red-2)"
+            st.html(
+                '<div class="dv2" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--dv2-line);'
+                'display:flex;justify-content:space-around;font-size:0.7rem;color:var(--dv2-muted)">'
+                '<div style="text-align:center">'
+                f'<div style="font-family:\'Barlow Condensed\';font-size:1.25rem;font-weight:700;color:var(--dv2-green-2)">{_fmt_k(monthly_in)}</div>'
+                '<div>Income</div></div>'
+                '<div style="text-align:center">'
+                f'<div style="font-family:\'Barlow Condensed\';font-size:1.25rem;font-weight:700;color:var(--dv2-red-2)">−{_fmt_k(housing + debts + budget)}</div>'
+                '<div>Expenses</div></div>'
+                '<div style="text-align:center">'
+                f'<div style="font-family:\'Barlow Condensed\';font-size:1.25rem;font-weight:700;color:var(--dv2-amber)">−{_fmt_k(invest_mo)}</div>'
+                '<div>Invested</div></div>'
+                '<div style="text-align:center">'
+                f'<div style="font-family:\'Barlow Condensed\';font-size:1.25rem;font-weight:700;color:{net_color}">{"+" if net_cf >= 0 else "−"}{_fmt_k(abs(net_cf))}</div>'
+                '<div>Net surplus</div></div>'
+                '</div>'
+            )
 
     # ── Debt Payoff Timeline ──────────────────────────────────────────────
     with r6b:
@@ -1044,5 +1037,3 @@ def render():
             '</div>'
         )
 
-    # Close the dv2 wrapper
-    st.markdown('</div>', unsafe_allow_html=True)

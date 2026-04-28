@@ -523,6 +523,16 @@ def inject_dashboard_v2_css() -> None:
 
 /* ── Range pills (override Streamlit segmented_control / pills) ──────── */
 .dv2 [data-testid="stRadio"] > div {{ flex-direction: row !important; gap: 2px; }}
+
+/* Uniform vertical rhythm for cards */
+.dv2-card {{ margin-bottom: 0 !important; }}
+
+/* When .dv2 styling needs to apply, the host can be inside the border wrapper */
+[data-testid="stVerticalBlockBorderWrapper"] .dv2-h,
+[data-testid="stVerticalBlockBorderWrapper"] .dv2-eyebrow,
+[data-testid="stVerticalBlockBorderWrapper"] .dv2-meta {{
+  font-family: 'Barlow', sans-serif;
+}}
 </style>
 """
     st.markdown(css, unsafe_allow_html=True)
@@ -580,9 +590,12 @@ def inject_css() -> None:
         [data-testid="stButton"] button:hover { background: #3b82f6 !important; color: white !important; }
 
         /* ── Containers (border=True) ──────────────────────────────────────── */
-        [data-testid="stVerticalBlock"] [data-testid="stVerticalBlockBorderWrapper"] {
-            background: #ffffff !important; border-color: #e2e8f0 !important;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.06) !important;
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background: linear-gradient(160deg, #ffffff 0%, #f8fafc 100%) !important;
+            border: 1px solid #e2e8f0 !important;
+            border-radius: 16px !important;
+            padding: 22px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
         }
 
         /* ── Dividers ──────────────────────────────────────────────────────── */
@@ -905,12 +918,14 @@ hr {
     margin: 1.25rem 0 !important;
 }
 
-/* ── Containers (with border=True) ──────────────────────────────────────── */
-[data-testid="stVerticalBlock"] [data-testid="stVerticalBlockBorderWrapper"] {
-    background: #0d1526 !important;
+/* ── Containers (with border=True) — dashboard card style ─────────────── */
+[data-testid="stVerticalBlockBorderWrapper"] {
+    background: linear-gradient(160deg, #0d1526 0%, #111c33 100%) !important;
     border: 1px solid rgba(255,255,255,0.07) !important;
-    border-radius: 12px !important;
-    padding: 1rem !important;
+    border-radius: 16px !important;
+    padding: 22px !important;
+    box-shadow: 0 4px 28px rgba(0,0,0,0.35) !important;
+    position: relative; overflow: hidden;
 }
 
 /* ── KPI Card HTML blocks ────────────────────────────────────────────────── */
