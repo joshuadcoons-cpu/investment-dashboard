@@ -237,8 +237,8 @@ def inject_dashboard_v2_css() -> None:
 .dv2-tick .sym {{ color: var(--dv2-text-2); font-weight: 600; }}
 .dv2-tick .px  {{ color: var(--dv2-muted); }}
 .dv2-tick .chg {{ font-weight: 600; }}
-.dv2-tick .up  {{ color: var(--dv2-green-2); }}
-.dv2-tick .dn  {{ color: var(--dv2-red-2); }}
+.dv2-tick .up  {{ color: #34d399; }}
+.dv2-tick .dn  {{ color: #f87171; }}
 
 /* ── Hero card ───────────────────────────────────────────────────────── */
 .dv2-card {{
@@ -507,19 +507,26 @@ def inject_dashboard_v2_css() -> None:
 .dv2-tk .nm .nt {{ font-size: 0.64rem; color: var(--dv2-muted); }}
 
 /* ── Milestone ───────────────────────────────────────────────────────── */
-.dv2-ms {{ margin-bottom: 13px; }}
+.dv2-ms {{ margin-bottom: 16px; }}
 .dv2-ms .top {{ display: flex; justify-content: space-between;
-  font-size: 0.78rem; margin-bottom: 5px; }}
+  font-size: 0.78rem; margin-bottom: 7px; }}
 .dv2-ms .top .ttl {{ color: var(--dv2-text); font-weight: 600; }}
 .dv2-ms .top .ev {{ color: var(--dv2-faint); font-size: 0.72rem;
   margin-left: 8px; font-weight: 400; }}
 .dv2-ms .top .pc {{ color: var(--dv2-muted); font-family: 'JetBrains Mono';
   font-size: 0.7rem; }}
-.dv2-ms .mtrack {{ height: 7px; background: var(--dv2-bar-track);
+.dv2-ms .mtrack {{ height: 10px; background: var(--dv2-bar-track);
   border-radius: 9999px; overflow: hidden; }}
-.dv2-ms .mfill {{ height: 100%; background: var(--dv2-blue); border-radius: 9999px; }}
-.dv2-ms.done .mfill {{ background: linear-gradient(90deg, var(--dv2-green), var(--dv2-green-2)); }}
-.dv2-ms.future .mfill {{ background: var(--dv2-bar-track); }}
+.dv2-ms .mfill {{ height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa, #06b6d4);
+  border-radius: 9999px;
+  box-shadow: 0 0 10px rgba(59,130,246,0.5); }}
+.dv2-ms.done .mfill {{
+  background: linear-gradient(90deg, #10b981, #34d399, #06b6d4);
+  box-shadow: 0 0 10px rgba(16,185,129,0.5); }}
+.dv2-ms.future .mfill {{
+  background: rgba(255,255,255,0.10);
+  box-shadow: none; }}
 
 /* ── Range pills (override Streamlit segmented_control / pills) ──────── */
 .dv2 [data-testid="stRadio"] > div {{ flex-direction: row !important; gap: 2px; }}

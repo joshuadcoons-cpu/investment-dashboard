@@ -54,6 +54,25 @@ CRYPTO_TICKERS = {"BTC", "ETH", "ADA", "XRP", "DOGE", "IBIT", "ETHA"}
 
 MARKET_PICKS = ["VOO", "QQQM", "AAPL", "MSFT", "BTC", "ETH", "IAU"]
 
+# Canonical sector overrides — fixes "Unknown" labels baked into the JSON
+TICKER_SECTOR_MAP = {
+    # US Equity
+    "VOO": "US Equity", "SCHG": "US Equity", "AVUV": "US Equity",
+    # Technology
+    "QQQM": "Technology", "AAPL": "Technology", "MSFT": "Technology",
+    "META": "Technology", "SMH": "Technology", "VGT": "Technology",
+    # Financials / Healthcare
+    "VFH": "Financials", "VHT": "Healthcare",
+    # International / Emerging
+    "VXUS": "International", "VWO": "Emerging Markets",
+    # Commodities (incl. gold)
+    "IAU": "Commodities", "PDBC": "Commodities",
+    # Crypto (ETFs + direct)
+    "IBIT": "Crypto", "ETHA": "Crypto",
+    "BTC": "Crypto", "ETH": "Crypto",
+    "ADA": "Crypto", "XRP": "Crypto", "DOGE": "Crypto",
+}
+
 
 # ─── Formatters ─────────────────────────────────────────────────────────────
 
@@ -79,6 +98,31 @@ def _fmt_px(v):
     if abs(v) < 1:
         return f"{v:.4f}"
     return f"{v:,.2f}"
+
+
+def _parse_date(v):
+    """Parse a date from str / {__date__: ...} dict / date object."""
+    if v is None:
+        return None
+    if isinstance(v, date):
+        return v
+    if isinstance(v, dict) and "__date__" in v:
+        return date.fromisoformat(v["__date__"])
+    if isinstance(v, str):
+        try:
+            return date.fromisoformat(v)
+        except ValueError:
+            return None
+    return None
+
+
+def _holding_sector(h):
+    """Resolve the canonical sector for a holding, correcting 'Unknown' labels."""
+    tk = h.get("ticker")
+    if tk and tk in TICKER_SECTOR_MAP:
+        return TICKER_SECTOR_MAP[tk]
+    sec = h.get("sector") or "Other"
+    return "Other" if sec == "Unknown" else sec
 
 
 # ─── Sparklines ─────────────────────────────────────────────────────────────
@@ -123,12 +167,56 @@ _RANGE_CFG = {
 }
 
 
-def _generate_growth_series(end_value, range_label, seed=None):
-    """Return (datetimes, values) of a simulated path that lands at end_value."""
+def _generate_growth_series(end_value, range_label, seed=None, portfolio_start_dt=None):
+    """Return (datetimes, values, origin_idx) of a simulated path landing at end_value.
+
+    If portfolio_start_dt is set and the range extends before it, the chart shows
+    a near-flat $0 pre-section up to that date, then a biased GBM growth curve
+    from there to now — so the story reads: "portfolio didn't exist yet, then it
+    started growing from this moment."
+    """
     rng = random.Random(seed) if seed is not None else random
     n, dt, drift, vol, span = _RANGE_CFG.get(range_label, _RANGE_CFG["1W"])
-    start = end_value / (1 + span * (0.85 + rng.random() * 0.4))
 
+    now = datetime.now()
+    times = [now - dt * (n - 1 - i) for i in range(n)]
+
+    # ── Pre-origin flat section ───────────────────────────────────────────
+    if portfolio_start_dt is not None:
+        ps = portfolio_start_dt
+        n_pre = sum(1 for t in times if t < ps)
+        # Need at least 5 post-origin bars for a meaningful growth curve
+        if 0 < n_pre < n - 5:
+            n_post = n - n_pre
+            pre_times  = times[:n_pre]
+            post_times = times[n_pre:]
+            seed_val   = end_value * 0.003   # ~0.3% of net worth (effectively $0)
+
+            # Pre-section: nearly flat, very small values
+            pre_vals = [seed_val * (0.9 + rng.random() * 0.2) for _ in range(n_pre)]
+            pre_vals[-1] = seed_val           # pin last pre-point to seed_val
+
+            # Post-section: biased GBM from seed_val → end_value
+            v = seed_val
+            path = [v]
+            for _ in range(1, n_post):
+                u1 = max(rng.random(), 1e-12)
+                u2 = rng.random()
+                z  = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+                v  = v * (1 + drift + vol * z)
+                path.append(v)
+
+            correction = end_value / path[-1] if path[-1] else 1
+            out_post = []
+            for i, p in enumerate(path):
+                w = i / (len(path) - 1) if len(path) > 1 else 1
+                out_post.append(p * (1 + (correction - 1) * (0.5 + 0.5 * w)))
+            out_post[-1] = end_value
+
+            return pre_times + post_times, pre_vals + out_post, n_pre
+
+    # ── Normal path (no pre-section needed) ──────────────────────────────
+    start = end_value / (1 + span * (0.85 + rng.random() * 0.4))
     v = start
     path = [v]
     for _ in range(1, n):
@@ -145,9 +233,7 @@ def _generate_growth_series(end_value, range_label, seed=None):
         out.append(p * (1 + (correction - 1) * (0.6 + 0.4 * w)))
     out[-1] = end_value
 
-    now = datetime.now()
-    times = [now - dt * (n - 1 - i) for i in range(n)]
-    return times, out
+    return times, out, 0
 
 
 # ─── Render ─────────────────────────────────────────────────────────────────
@@ -251,6 +337,18 @@ def render():
         if (total_investments - daily_gain) else 0
     )
 
+    # Portfolio origin date (used to anchor the growth chart)
+    _ps_date = _parse_date(a.get("loan_start_date"))
+    portfolio_start_dt = (
+        datetime.combine(_ps_date, datetime.min.time()) if _ps_date else None
+    )
+
+    # Mortgage % paid (computed here so both hero and debt timeline can use it)
+    mort_pct = status["pct_paid"] if "pct_paid" in status else (
+        (a["loan_original_amount"] - status["current_balance"]) / a["loan_original_amount"] * 100
+        if a["loan_original_amount"] else 0
+    )
+
     # Retirement projection
     yrs_to_ret = a["retirement_age"] - a["age"]
     retire = {"pct": 0, "ret_income": 0, "inflated": 0, "bal": 0}
@@ -300,7 +398,7 @@ def render():
                 f'<span class="chg {cls}">{arrow} {sign}{t["pct"]:.2f}%</span></span>'
             )
     if ticker_html:
-        st.markdown(f'<div class="dv2-market">{ticker_html}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="dv2 dv2-market">{ticker_html}</div>', unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════════
     # 2. HERO ROW — Growth chart + Snapshot
@@ -336,9 +434,12 @@ def render():
         seed_key = f"growth_seed_{rng}"
         if seed_key not in st.session_state:
             st.session_state[seed_key] = random.randint(0, 1_000_000)
-        times, vals = _generate_growth_series(net_worth, rng, st.session_state[seed_key])
+        times, vals, origin_idx = _generate_growth_series(
+            net_worth, rng, st.session_state[seed_key], portfolio_start_dt
+        )
 
-        start_v = vals[0]
+        # Use first post-origin value as "Open" so delta reflects real growth period
+        start_v = vals[origin_idx]
         end_v   = vals[-1]
         change  = end_v - start_v
         chg_pct = (change / start_v * 100) if start_v else 0
@@ -441,16 +542,36 @@ def render():
             )
 
     with hero_r:
-        # Snapshot card
         snap_date = today.strftime("%B %d, %Y")
         port_gain = total_investments - cost_basis
         eq_pct    = home_equity / a["home_current_value"] * 100 if a["home_current_value"] else 0
-        ret_pct_disp  = min(150, retire["pct"])
-        ret_fill_pct  = min(100, ret_pct_disp)
-        mort_pct      = status["pct_paid"] if "pct_paid" in status else (
-            (a["loan_original_amount"] - status["current_balance"]) / a["loan_original_amount"] * 100
-            if a["loan_original_amount"] else 0
-        )
+
+        # Build compact NW breakdown bars for embedding in snapshot card
+        _snap_nw = [
+            ("Home Value",   a["home_current_value"],       "asset"),
+            ("Investments",  total_investments,             "asset"),
+            ("HYSA",         a["emergency_fund_balance"],   "asset"),
+            ("Sinking Fund", sinking_fund,                  "asset"),
+            ("Checking",     a["checking_savings_balance"], "asset"),
+            ("Mortgage",     status["current_balance"],     "liab"),
+        ]
+        for _d in a["other_debts"]:
+            _snap_nw.append((_d["name"], _d["balance"], "liab"))
+        _snap_nw = [_it for _it in _snap_nw if _it[1] > 0]
+        _snap_max = max(_it[1] for _it in _snap_nw) or 1
+
+        _snap_bars = ""
+        for _nm, _v, _typ in _snap_nw:
+            _w = (_v / _snap_max) ** 0.45 * 100
+            _rc = " right" if _typ == "liab" else ""
+            _snap_bars += (
+                f'<div class="dv2-nw-row{_rc}" style="margin-bottom:5px">'
+                f'<div class="name" style="width:88px;font-size:0.7rem">{_html.escape(_nm)}</div>'
+                f'<div class="barwrap" style="height:15px">'
+                f'<div class="bar {_typ}" style="width:{_w:.1f}%;min-width:2px">'
+                f'<span class="amt" style="font-size:0.62rem">{_fmt_k(_v)}</span>'
+                f'</div></div></div>'
+            )
 
         st.markdown(f"""
         <div class="dv2-card" style="margin-bottom:0">
@@ -478,25 +599,36 @@ def render():
             </div>
           </div>
 
-          <div style="margin-top:18px">
-            <div class="dv2-headline-row">
-              <div class="lab">Retirement readiness — age {a["retirement_age"]}</div>
-              <div class="mono" style="font-size:0.78rem;color:var(--dv2-green-2)">{ret_pct_disp:.0f}% covered</div>
+          <div style="margin-top:16px">
+            <div class="dv2-headline-row" style="margin-bottom:10px">
+              <div class="lab">Net Worth Breakdown</div>
+              <div class="mono" style="font-size:0.72rem;color:#a78bfa">{_fmt_k(net_worth)}</div>
             </div>
-            <div class="dv2-meter"><div class="fill" style="width:{ret_fill_pct}%"></div></div>
-            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.68rem;color:var(--dv2-faint)">
-              <span>{_fmt_k(retire["ret_income"])}/mo income</span>
-              <span>{_fmt_k(retire["inflated"])}/mo need</span>
+            {_snap_bars}
+            <div style="display:flex;justify-content:space-between;border-top:1px solid rgba(255,255,255,0.07);
+              padding-top:8px;margin-top:8px">
+              <div style="text-align:left">
+                <div style="font-size:0.58rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;font-weight:700">Assets</div>
+                <div style="font-family:\'Barlow Condensed\';font-size:1.15rem;font-weight:700;color:#34d399">{_fmt_k(total_assets)}</div>
+              </div>
+              <div style="text-align:center">
+                <div style="font-size:0.58rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;font-weight:700">Liabilities</div>
+                <div style="font-family:\'Barlow Condensed\';font-size:1.15rem;font-weight:700;color:#f87171">−{_fmt_k(total_liab)}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:0.58rem;color:#94a3b8;text-transform:uppercase;letter-spacing:0.1em;font-weight:700">Net Worth</div>
+                <div style="font-family:\'Barlow Condensed\';font-size:1.15rem;font-weight:700;color:#a78bfa">{_fmt_k(net_worth)}</div>
+              </div>
             </div>
           </div>
 
           <div style="margin-top:14px">
             <div class="dv2-headline-row">
               <div class="lab">Mortgage paid off</div>
-              <div class="mono" style="font-size:0.78rem;color:var(--dv2-cyan)">{mort_pct:.1f}% paid</div>
+              <div class="mono" style="font-size:0.78rem;color:#06b6d4">{mort_pct:.1f}% paid</div>
             </div>
             <div class="dv2-meter amber"><div class="fill" style="width:{mort_pct}%"></div></div>
-            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.68rem;color:var(--dv2-faint)">
+            <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:0.68rem;color:#64748b">
               <span>{_fmt_k(a["loan_original_amount"] - status["current_balance"])} paid</span>
               <span>Payoff {status["payoff_date"].strftime("%b %Y")}</span>
             </div>
@@ -591,57 +723,9 @@ def render():
         """, unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════════
-    # 5. ROW 3 — Net Worth bars / Donut / Sector
+    # 5. ROW 3 — Allocation Donut / Sector allocation
     # ═══════════════════════════════════════════════════════════════════════
-    r3a, r3b, r3c = st.columns([1.1, 0.9, 1.0])
-
-    # ── Net Worth Breakdown ───────────────────────────────────────────────
-    with r3a:
-        nw_items = [
-            ("Home Value",       a["home_current_value"],       "asset"),
-            ("Investments",      total_investments,             "asset"),
-            ("HYSA",             a["emergency_fund_balance"],   "asset"),
-            ("Sinking Fund",     sinking_fund,                  "asset"),
-            ("Checking/Savings", a["checking_savings_balance"], "asset"),
-            ("Mortgage",         status["current_balance"],     "liab"),
-        ]
-        for d in a["other_debts"]:
-            nw_items.append((d["name"], d["balance"], "liab"))
-        nw_items = [it for it in nw_items if it[1] > 0]
-        max_v = max(it[1] for it in nw_items) or 1
-
-        rows_html = ""
-        for name, v, typ in nw_items:
-            w = (v / max_v) ** 0.45 * 100
-            right_cls = " right" if typ == "liab" else ""
-            rows_html += (
-                f'<div class="dv2-nw-row{right_cls}">'
-                f'<div class="name">{_html.escape(name)}</div>'
-                f'<div class="barwrap">'
-                f'<div class="bar {typ}" style="width:{w:.1f}%">'
-                f'<span class="amt">{_fmt_k(v)}</span></div></div></div>'
-            )
-
-        st.markdown(f"""
-        <div class="dv2-card">
-          <div class="dv2-h">Net Worth Breakdown <span class="meta">{_fmt_k(net_worth)}</span></div>
-          {rows_html}
-          <div class="dv2-nw-summary">
-            <div class="col">
-              <div class="lab">Total Assets</div>
-              <div class="v green">{_fmt_k(total_assets)}</div>
-            </div>
-            <div class="col">
-              <div class="lab">Total Liabilities</div>
-              <div class="v red">−{_fmt_k(total_liab)}</div>
-            </div>
-            <div class="col">
-              <div class="lab">Net Worth</div>
-              <div class="v purple">{_fmt_k(net_worth)}</div>
-            </div>
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+    r3b, r3c = st.columns([0.9, 1.1])
 
     # ── Allocation Donut ──────────────────────────────────────────────────
     with r3b:
@@ -711,9 +795,7 @@ def render():
         port_total = 0
         for acct in a["investment_accounts"]:
             for h in acct.get("holdings", []):
-                sec = h.get("sector") or "Other"
-                if sec == "Unknown":
-                    sec = "Other"
+                sec = _holding_sector(h)
                 mv = _holding_mv(h)
                 sector_vals[sec] = sector_vals.get(sec, 0) + mv
                 port_total += mv
@@ -721,11 +803,14 @@ def render():
         if port_total <= 0:
             port_total = 1
 
+        # Build rows for sectors that have actual holdings (cur > 0)
+        # Also include sectors from the target list only if they have holdings
         all_sectors = list(set(list(sector_targets.keys()) + list(sector_vals.keys())))
         rows = sorted([
             {"name": s, "cur": sector_vals.get(s, 0) / port_total * 100,
              "target": sector_targets.get(s, 0)}
             for s in all_sectors
+            if sector_vals.get(s, 0) > 0   # only show sectors with actual holdings
         ], key=lambda r: -r["cur"])
 
         max_scale = max(40, max((max(r["cur"], r["target"]) for r in rows), default=40))
@@ -958,7 +1043,7 @@ def render():
                 day_pct = ((px_ - prev) / prev * 100) if prev else 0
                 all_h.append({
                     "ticker": tk,
-                    "sector": h.get("sector") or "Other",
+                    "sector": _holding_sector(h),
                     "shares": h["shares"],
                     "px": px_,
                     "day_pct": day_pct,
@@ -973,7 +1058,7 @@ def render():
             sec_color = SECTOR_COLORS.get(h["sector"], "#64748b")
             ticker_disp = h["ticker"].lstrip("_")
             ic_text = ticker_disp[:3] if len(ticker_disp) <= 4 else ticker_disp[:2]
-            day_color = "var(--dv2-green-2)" if h["day_chg"] >= 0 else "var(--dv2-red-2)"
+            day_color = "#34d399" if h["day_chg"] >= 0 else "#f87171"
             day_sign = "+" if h["day_pct"] >= 0 else ""
             rows_html += (
                 '<tr><td>'

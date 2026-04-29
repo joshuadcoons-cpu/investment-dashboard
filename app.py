@@ -27,7 +27,7 @@ if "ui_ver" not in st.session_state:
 CRYPTO_YF = {"BTC": "BTC-USD", "ETH": "ETH-USD", "ADA": "ADA-USD",
              "XRP": "XRP-USD", "DOGE": "DOGE-USD"}
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _fetch_prices(tickers: tuple) -> tuple:
     """Returns (prices, prev_closes) dicts keyed by ticker."""
     prices = {}
@@ -42,30 +42,28 @@ def _fetch_prices(tickers: tuple) -> tuple:
             pass
     return prices, prev_closes
 
-if "prices_refreshed" not in st.session_state:
-    a = st.session_state.assumptions
-    all_tickers = set()
-    for acct in a.get("investment_accounts", []):
-        for h in acct.get("holdings", []):
-            if h.get("ticker"):
-                all_tickers.add(h["ticker"])
-    if all_tickers:
-        prices, prev_closes = _fetch_prices(tuple(sorted(all_tickers)))
-        st.session_state.live_prices = prices
-        st.session_state.prev_prices = prev_closes
-        for acct in a["investment_accounts"]:
-            has_priced = any(
-                h.get("ticker") and prices.get(h["ticker"])
-                for h in acct.get("holdings", [])
-            )
-            if has_priced:
-                mv = acct.get("cash_usd", 0)
-                for h in acct.get("holdings", []):
-                    p = prices.get(h.get("ticker"))
-                    if p:
-                        mv += h["shares"] * p
-                acct["balance"] = round(mv, 2)
-    st.session_state.prices_refreshed = True
+_a_prices = st.session_state.assumptions
+_all_tickers = set()
+for _acct in _a_prices.get("investment_accounts", []):
+    for _h in _acct.get("holdings", []):
+        if _h.get("ticker"):
+            _all_tickers.add(_h["ticker"])
+if _all_tickers:
+    _prices, _prev_closes = _fetch_prices(tuple(sorted(_all_tickers)))
+    st.session_state.live_prices = _prices
+    st.session_state.prev_prices = _prev_closes
+    for _acct in _a_prices["investment_accounts"]:
+        _has_priced = any(
+            _h.get("ticker") and _prices.get(_h["ticker"])
+            for _h in _acct.get("holdings", [])
+        )
+        if _has_priced:
+            _mv = _acct.get("cash_usd", 0)
+            for _h in _acct.get("holdings", []):
+                _p = _prices.get(_h.get("ticker"))
+                if _p:
+                    _mv += _h["shares"] * _p
+            _acct["balance"] = round(_mv, 2)
 
 
 a = st.session_state.assumptions
