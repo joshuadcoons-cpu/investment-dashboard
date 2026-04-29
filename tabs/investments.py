@@ -566,6 +566,109 @@ def render():
                 with st.expander(f"Holdings ({len(priced_holdings)} positions)", expanded=False):
                     st.dataframe(styled, use_container_width=True, hide_index=True)
 
+            # ── Edit holdings (interactive spreadsheet) ─────────────────────
+            with st.expander("✏️ Edit Holdings", expanded=False):
+                st.caption(
+                    "Edit ticker, shares, avg cost, or sector inline. "
+                    "Use the **+** at the bottom of the table to add a new row, "
+                    "or click a row checkbox + the trash icon to delete. "
+                    "Changes save automatically — refresh prices in the sidebar after."
+                )
+
+                # Holdings with tickers (priced positions only — fund-only rows
+                # like 401k mutual funds are preserved separately and not shown here)
+                ticker_holdings = [h for h in acct.get("holdings", []) if h.get("ticker")]
+
+                edit_rows = [
+                    {
+                        "Ticker":   h.get("ticker") or "",
+                        "Shares":   float(h.get("shares") or 0),
+                        "Avg Cost": float(h.get("avg_cost") or 0),
+                        "Sector":   h.get("sector") or "Unknown",
+                    }
+                    for h in ticker_holdings
+                ]
+                edit_df = (
+                    pd.DataFrame(edit_rows)
+                    if edit_rows
+                    else pd.DataFrame(columns=["Ticker", "Shares", "Avg Cost", "Sector"])
+                )
+
+                edited = st.data_editor(
+                    edit_df,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    hide_index=True,
+                    key=f"hed_{acct.get('_id', acct['label'])}",
+                    column_config={
+                        "Ticker": st.column_config.TextColumn(
+                            "Ticker", required=False, max_chars=12, width="small",
+                            help="Stock/ETF/crypto symbol (e.g. VOO, BTC, MSFT)",
+                        ),
+                        "Shares": st.column_config.NumberColumn(
+                            "Shares", format="%.4f", min_value=0.0, step=0.0001,
+                            help="Number of shares/units held",
+                        ),
+                        "Avg Cost": st.column_config.NumberColumn(
+                            "Avg Cost", format="$%.2f", min_value=0.0, step=0.01,
+                            help="Average cost per share (leave 0 if untracked)",
+                        ),
+                        "Sector": st.column_config.SelectboxColumn(
+                            "Sector",
+                            options=[
+                                "US Equity", "Technology", "International",
+                                "Emerging Markets", "Commodities", "Crypto",
+                                "Financials", "Healthcare", "Other", "Unknown",
+                            ],
+                            help="Asset class (overridden by ticker map for known symbols)",
+                        ),
+                    },
+                )
+
+                # Sync edited rows back to acct["holdings"], preserving any
+                # fund-only entries (401k mutual funds with null tickers + fund_name)
+                preserved_funds = [
+                    h for h in acct.get("holdings", [])
+                    if not h.get("ticker") and h.get("fund_name")
+                ]
+                rebuilt = []
+                for _, row in edited.iterrows():
+                    raw_t = row.get("Ticker")
+                    ticker = str(raw_t).strip().upper() if pd.notna(raw_t) and str(raw_t).strip() else ""
+                    if not ticker:
+                        continue
+                    shares = float(row["Shares"]) if pd.notna(row.get("Shares")) else 0.0
+                    cost   = (
+                        float(row["Avg Cost"])
+                        if pd.notna(row.get("Avg Cost")) and row["Avg Cost"] > 0
+                        else None
+                    )
+                    sector = str(row["Sector"]) if pd.notna(row.get("Sector")) else "Unknown"
+                    rebuilt.append({
+                        "ticker": ticker,
+                        "shares": shares,
+                        "avg_cost": cost,
+                        "sector": sector,
+                    })
+
+                # Detect actual diff (avoid pointless writes/reruns from float roundtrips)
+                def _normalize(holdings):
+                    return [
+                        (
+                            h.get("ticker"),
+                            round(float(h.get("shares") or 0), 6),
+                            round(float(h.get("avg_cost") or 0), 4) if h.get("avg_cost") else None,
+                            h.get("sector"),
+                        )
+                        for h in holdings if h.get("ticker")
+                    ]
+                if _normalize(rebuilt) != _normalize(ticker_holdings):
+                    acct["holdings"] = preserved_funds + rebuilt
+                    st.toast(f"✓ {acct['label']} holdings updated — refreshing prices…", icon="💾")
+                    # Clear the price cache so newly-added tickers get fetched
+                    st.cache_data.clear()
+                    st.rerun()
+
             # 401k fund allocations (no live prices)
             fund_holdings = [
                 h for h in acct.get("holdings", [])
