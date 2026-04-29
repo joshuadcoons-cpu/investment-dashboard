@@ -594,12 +594,13 @@ def render():
                     else pd.DataFrame(columns=["Ticker", "Shares", "Avg Cost", "Sector"])
                 )
 
+                editor_key = f"hed_{acct.get('_id', acct['label'])}"
                 edited = st.data_editor(
                     edit_df,
                     num_rows="dynamic",
                     use_container_width=True,
                     hide_index=True,
-                    key=f"hed_{acct.get('_id', acct['label'])}",
+                    key=editor_key,
                     column_config={
                         "Ticker": st.column_config.TextColumn(
                             "Ticker", required=False, max_chars=12, width="small",
@@ -662,11 +663,31 @@ def render():
                         )
                         for h in holdings if h.get("ticker")
                     ]
+
                 if _normalize(rebuilt) != _normalize(ticker_holdings):
+                    # Detect newly-added tickers (so we can refresh prices for them)
+                    old_ticker_set = {h.get("ticker") for h in ticker_holdings}
+                    new_ticker_set = {h["ticker"] for h in rebuilt}
+                    added_tickers = new_ticker_set - old_ticker_set
+
                     acct["holdings"] = preserved_funds + rebuilt
-                    st.toast(f"✓ {acct['label']} holdings updated — refreshing prices…", icon="💾")
-                    # Clear the price cache so newly-added tickers get fetched
-                    st.cache_data.clear()
+
+                    # CRITICAL: clear the data_editor's session state so its
+                    # accumulated diff (added_rows / edited_rows / deleted_rows)
+                    # doesn't get re-applied on top of the freshly-synced source
+                    # — that's what causes the feedback loop.
+                    if editor_key in st.session_state:
+                        del st.session_state[editor_key]
+
+                    if added_tickers:
+                        # New ticker(s) added — clear price cache so prices fetch
+                        st.cache_data.clear()
+                        st.toast(
+                            f"✓ Added {', '.join(sorted(added_tickers))} to {acct['label']} — fetching prices…",
+                            icon="💾",
+                        )
+                    else:
+                        st.toast(f"✓ {acct['label']} holdings saved", icon="💾")
                     st.rerun()
 
             # 401k fund allocations (no live prices)
