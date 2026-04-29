@@ -271,26 +271,58 @@ def render():
         return 0
 
     def _acct_mv(acct):
+        """Live market value of an account.
+
+        Uses live price when available, then avg_cost as a fallback for any
+        holding that wasn't returned by yfinance, so we don't silently drop
+        positions when a price is missing. Falls back to the stored balance
+        only when the account has zero priceable holdings (e.g., 401k mutual
+        funds with null tickers).
+        """
+        holdings = acct.get("holdings", [])
         has_priced = any(
             h.get("ticker") and live_prices.get(h["ticker"])
-            for h in acct.get("holdings", [])
+            for h in holdings
         )
-        if has_priced:
-            mv = acct.get("cash_usd", 0)
-            for h in acct.get("holdings", []):
-                p = live_prices.get(h.get("ticker"))
-                if p:
-                    mv += h["shares"] * p
-            return mv
-        return acct.get("balance", 0)
+        if not has_priced:
+            return acct.get("balance", 0)
 
-    def _acct_day(acct):
-        d = 0.0
+        mv = acct.get("cash_usd", 0)
+        for h in holdings:
+            tk = h.get("ticker")
+            live = live_prices.get(tk) if tk else None
+            if live:
+                mv += h["shares"] * live
+            elif h.get("avg_cost"):
+                # Fallback: use cost basis when live price is unavailable
+                mv += h["shares"] * h["avg_cost"]
+        return mv
+
+    def _acct_day_metrics(acct):
+        """Return (day_dollar, day_pct, today_priced_mv, yesterday_priced_mv).
+
+        - day_dollar: sum of (live - prev) * shares for holdings with both prices.
+        - today_priced_mv / yesterday_priced_mv: the live and prev market value
+          of just the holdings that have both today's and yesterday's price.
+        - day_pct: day_dollar / yesterday_priced_mv (the % change of the moving
+          portion only — NOT diluted by static cash or unpriced positions).
+        """
+        today_v = 0.0
+        yesterday_v = 0.0
         for h in acct.get("holdings", []):
             tk = h.get("ticker")
-            if tk and live_prices.get(tk) and prev_prices.get(tk):
-                d += (live_prices[tk] - prev_prices[tk]) * h["shares"]
-        return d
+            lp = live_prices.get(tk) if tk else None
+            pc = prev_prices.get(tk) if tk else None
+            if lp and pc:
+                today_v += h["shares"] * lp
+                yesterday_v += h["shares"] * pc
+        day_dollar = today_v - yesterday_v
+        day_pct = (day_dollar / yesterday_v * 100) if yesterday_v > 0 else 0
+        return day_dollar, day_pct, today_v, yesterday_v
+
+    def _acct_day(acct):
+        """Backward-compat shim: just the dollar P&L."""
+        return _acct_day_metrics(acct)[0]
 
     total_investments = sum(_acct_mv(acct) for acct in a["investment_accounts"])
     cost_basis = sum(
@@ -330,11 +362,17 @@ def render():
     total_exp = housing + debts + budget
     ef_months = liquid_cash / total_exp if total_exp else 0
 
-    # Daily P&L
-    daily_gain = sum(_acct_day(acct) for acct in a["investment_accounts"])
-    daily_pct  = (
-        daily_gain / (total_investments - daily_gain) * 100
-        if (total_investments - daily_gain) else 0
+    # ── Daily P&L ────────────────────────────────────────────────────────
+    # daily_gain  = Σ (live - prev) * shares across every priced holding
+    # daily_pct   = day_$ / yesterday's priced market value, NOT total
+    #               investments (which would dilute the % by static cash
+    #               and unpriced positions like 401k mutual funds).
+    _acct_metrics = [_acct_day_metrics(acct) for acct in a["investment_accounts"]]
+    daily_gain   = sum(m[0] for m in _acct_metrics)
+    _yesterday_priced_total = sum(m[3] for m in _acct_metrics)
+    daily_pct    = (
+        daily_gain / _yesterday_priced_total * 100
+        if _yesterday_priced_total > 0 else 0
     )
 
     # Portfolio origin date (used to anchor the growth chart)
@@ -988,8 +1026,7 @@ def render():
         acct_items = []
         for i, ac in enumerate(a["investment_accounts"]):
             mv = _acct_mv(ac)
-            day = _acct_day(ac)
-            day_pct = (day / (mv - day) * 100) if (mv - day) else 0
+            day, day_pct, _today_pv, _yest_pv = _acct_day_metrics(ac)
             acct_items.append({
                 "ac": ac, "mv": mv, "day": day, "day_pct": day_pct,
                 "color": ACCT_COLORS[i % len(ACCT_COLORS)],
@@ -1039,11 +1076,19 @@ def render():
                 tk = h.get("ticker")
                 if not tk:
                     continue
-                px_ = live_prices.get(tk) or h.get("avg_cost") or 0
+                live = live_prices.get(tk)
                 prev = prev_prices.get(tk)
-                mv = h["shares"] * px_
-                day_chg = (px_ - prev) if prev else 0
-                day_pct = ((px_ - prev) / prev * 100) if prev else 0
+                # Display price: live → avg_cost → 0
+                px_ = live or h.get("avg_cost") or 0
+                mv  = h["shares"] * px_
+                # Day P&L: only valid when BOTH live and prev are available.
+                # Comparing avg_cost to prev_close would be meaningless.
+                if live and prev:
+                    day_chg = live - prev
+                    day_pct = (live - prev) / prev * 100
+                else:
+                    day_chg = 0
+                    day_pct = 0
                 all_h.append({
                     "ticker": tk,
                     "sector": _holding_sector(h),

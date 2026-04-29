@@ -29,15 +29,43 @@ CRYPTO_YF = {"BTC": "BTC-USD", "ETH": "ETH-USD", "ADA": "ADA-USD",
 
 @st.cache_data(ttl=60, show_spinner=False)
 def _fetch_prices(tickers: tuple) -> tuple:
-    """Returns (prices, prev_closes) dicts keyed by ticker."""
+    """Returns (prices, prev_closes) dicts keyed by ticker.
+
+    Strategy:
+      1. Try Ticker.fast_info.last_price / .previous_close (fast).
+      2. If either is missing/zero, fall back to Ticker.history(period="5d")
+         and read the last two daily closes — this is reliable but slower.
+    Both prices and prev_closes are required to compute today's move, so
+    a missing prev_close on a fresh-IPO ticker would otherwise zero out
+    that holding's day P&L.
+    """
     prices = {}
     prev_closes = {}
     for t in tickers:
         yf_t = CRYPTO_YF.get(t, t)
         try:
-            fi = yf.Ticker(yf_t).fast_info
-            prices[t] = fi.last_price
-            prev_closes[t] = fi.previous_close
+            tk = yf.Ticker(yf_t)
+            fi = tk.fast_info
+            lp = fi.last_price or 0
+            pc = fi.previous_close or 0
+
+            # If either price is missing, fall back to daily history
+            if not lp or not pc:
+                try:
+                    hist = tk.history(period="5d", auto_adjust=False)
+                    if not hist.empty and "Close" in hist.columns:
+                        closes = hist["Close"].dropna()
+                        if len(closes) >= 1 and not lp:
+                            lp = float(closes.iloc[-1])
+                        if len(closes) >= 2 and not pc:
+                            pc = float(closes.iloc[-2])
+                except Exception:
+                    pass
+
+            if lp and lp > 0:
+                prices[t] = float(lp)
+            if pc and pc > 0:
+                prev_closes[t] = float(pc)
         except Exception:
             pass
     return prices, prev_closes
