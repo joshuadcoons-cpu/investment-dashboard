@@ -1108,12 +1108,16 @@ def render():
             done = net_worth >= target
             future = m["age"] > a["age"] and not done
             cls = "done" if done else ("future" if future else "")
+            chip_label = "✓ Achieved" if done else ("● Active" if not future else "Upcoming")
             ms_html += (
                 f'<div class="dv2-ms {cls}">'
+                f'<div class="ms-chip"><span class="dot"></span>{chip_label}</div>'
                 '<div class="top">'
-                f'<span><span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span>'
-                f'<span class="ev">{_html.escape(m["event"])}</span></span>'
-                f'<span class="pc">{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>'
+                '<div class="left">'
+                f'<span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span>'
+                f'<span class="ev">{_html.escape(m["event"])}</span>'
+                '</div>'
+                f'<span class="pc">{pct:.0f}%<br><span style="font-size:0.62rem;font-weight:400;opacity:0.8">{_fmt_k(net_worth)} of {_fmt_k(target)}</span></span>'
                 '</div>'
                 f'<div class="mtrack"><div class="mfill" style="width:{pct}%"></div></div>'
                 '</div>'

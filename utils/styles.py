@@ -507,15 +507,55 @@ def inject_dashboard_v2_css() -> None:
 .dv2-tk .nm .nt {{ font-size: 0.64rem; color: var(--dv2-muted); }}
 
 /* ── Milestone ───────────────────────────────────────────────────────── */
-.dv2-ms {{ margin-bottom: 16px; }}
+.dv2-ms {{
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border-left: 3px solid #3b82f6;
+  background: rgba(59,130,246,0.06);
+}}
+.dv2-ms.done {{
+  border-left-color: #10b981;
+  background: rgba(16,185,129,0.06);
+}}
+.dv2-ms.future {{
+  border-left-color: #475569;
+  background: rgba(255,255,255,0.02);
+}}
+
+.dv2-ms .ms-chip {{
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px; border-radius: 9999px;
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.1em;
+  margin-bottom: 9px; text-transform: uppercase;
+  background: rgba(59,130,246,0.15); color: #60a5fa;
+}}
+.dv2-ms.done .ms-chip {{
+  background: rgba(16,185,129,0.15); color: #34d399;
+}}
+.dv2-ms.future .ms-chip {{
+  background: rgba(71,85,105,0.2); color: #64748b;
+}}
+.dv2-ms .ms-chip .dot {{
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0;
+}}
+
 .dv2-ms .top {{ display: flex; justify-content: space-between;
-  font-size: 0.78rem; margin-bottom: 7px; }}
-.dv2-ms .top .ttl {{ color: var(--dv2-text); font-weight: 600; }}
-.dv2-ms .top .ev {{ color: var(--dv2-faint); font-size: 0.72rem;
-  margin-left: 8px; font-weight: 400; }}
-.dv2-ms .top .pc {{ color: var(--dv2-muted); font-family: 'JetBrains Mono';
-  font-size: 0.7rem; }}
-.dv2-ms .mtrack {{ height: 10px; background: var(--dv2-bar-track);
+  align-items: baseline; font-size: 0.78rem; margin-bottom: 10px; gap: 12px; }}
+.dv2-ms .top .left {{ display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }}
+.dv2-ms .top .ttl {{ color: #f1f5f9; font-weight: 700; font-size: 0.82rem; }}
+.dv2-ms.done .top .ttl {{ color: #34d399; }}
+.dv2-ms.future .top .ttl {{ color: #94a3b8; }}
+.dv2-ms .top .ev {{ color: #64748b; font-size: 0.72rem; font-weight: 400; }}
+.dv2-ms .top .pc {{
+  color: #60a5fa; font-family: 'JetBrains Mono'; font-size: 0.72rem;
+  font-weight: 600; white-space: nowrap; text-align: right; flex-shrink: 0;
+}}
+.dv2-ms.done .top .pc {{ color: #34d399; }}
+.dv2-ms.future .top .pc {{ color: #64748b; }}
+
+.dv2-ms .mtrack {{ height: 10px; background: {_bar_track};
   border-radius: 9999px; overflow: hidden; }}
 .dv2-ms .mfill {{ height: 100%;
   background: linear-gradient(90deg, #3b82f6, #60a5fa, #06b6d4);
