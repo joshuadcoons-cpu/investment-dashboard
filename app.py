@@ -74,11 +74,21 @@ if "theme" not in st.session_state:
 
 with st.sidebar:
     st.markdown(f"### {a['dashboard_name']}")
-    theme_label = "🌙 Dark" if st.session_state.theme == "dark" else "☀️ Light"
-    if st.button(f"Switch to {'☀️ Light' if st.session_state.theme == 'dark' else '🌙 Dark'} Mode"):
-        st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
-        st.rerun()
-    st.caption(f"Theme: {theme_label}")
+
+    # ── Live price refresh ────────────────────────────────────────────────────
+    col_r, col_t = st.columns([1, 1])
+    with col_r:
+        if st.button("🔄 Refresh Prices", use_container_width=True):
+            _fetch_prices.clear()
+            st.rerun()
+    with col_t:
+        theme_label = "🌙 Dark" if st.session_state.theme == "dark" else "☀️ Light"
+        if st.button(
+            f"{'☀️ Light' if st.session_state.theme == 'dark' else '🌙 Dark'} Mode",
+            use_container_width=True,
+        ):
+            st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
+            st.rerun()
 
     # ── PDF Export ────────────────────────────────────────────────────────────
     st.divider()
