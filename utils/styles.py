@@ -351,22 +351,22 @@ def inject_dashboard_v2_css() -> None:
 /* ── Today's move strip ─────────────────────────────────────────────── */
 .dv2-move {{
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  background: linear-gradient(90deg, var(--dv2-card) 0%, var(--dv2-card2) 100%);
-  border: 1px solid var(--dv2-line);
-  border-radius: 11px; padding: 12px 18px; margin-bottom: 22px;
+  background: linear-gradient(90deg, {_card} 0%, {_card2} 100%);
+  border: 1px solid {_line};
+  border-radius: 11px; padding: 14px 20px; margin-bottom: 22px;
 }}
-.dv2-move.up {{ border-left: 3px solid var(--dv2-green); }}
-.dv2-move.dn {{ border-left: 3px solid var(--dv2-red); }}
-.dv2-move .ttl {{ font-size: 0.62rem; font-weight: 700; color: var(--dv2-muted);
-  text-transform: uppercase; letter-spacing: 0.12em; }}
-.dv2-move .big {{ font-family: 'Barlow Condensed'; font-size: 1.35rem; font-weight: 700; }}
-.dv2-move.up .big {{ color: var(--dv2-green-2); }}
-.dv2-move.dn .big {{ color: var(--dv2-red-2); }}
-.dv2-move .pct {{ font-family: 'JetBrains Mono'; font-size: 0.8rem; margin-left: 6px; }}
-.dv2-move.up .pct {{ color: var(--dv2-green-2); }}
-.dv2-move.dn .pct {{ color: var(--dv2-red-2); }}
-.dv2-move .sep {{ color: var(--dv2-dim); }}
-.dv2-move .acc {{ font-size: 0.78rem; color: var(--dv2-muted); font-family: 'Barlow'; }}
+.dv2-move.up {{ border-left: 4px solid #10b981; }}
+.dv2-move.dn {{ border-left: 4px solid #ef4444; }}
+.dv2-move .ttl {{ font-size: 0.62rem; font-weight: 700; color: {_muted};
+  text-transform: uppercase; letter-spacing: 0.12em; white-space: nowrap; }}
+.dv2-move .big {{ font-family: 'Barlow Condensed'; font-size: 1.45rem; font-weight: 700; }}
+.dv2-move.up .big {{ color: #34d399; }}
+.dv2-move.dn .big {{ color: #f87171; }}
+.dv2-move .pct {{ font-family: 'JetBrains Mono'; font-size: 0.82rem; margin-left: 6px; }}
+.dv2-move.up .pct {{ color: #34d399; }}
+.dv2-move.dn .pct {{ color: #f87171; }}
+.dv2-move .sep {{ color: {_dim}; margin: 0 4px; }}
+.dv2-move .acc {{ font-size: 0.78rem; color: {_muted}; font-family: 'Barlow'; }}
 .dv2-move .acc b {{ font-family: 'JetBrains Mono'; font-weight: 600; margin-left: 4px; }}
 
 /* ── Card header ─────────────────────────────────────────────────────── */
@@ -539,6 +539,30 @@ def inject_dashboard_v2_css() -> None:
 [data-testid="stVerticalBlockBorderWrapper"] .dv2-eyebrow,
 [data-testid="stVerticalBlockBorderWrapper"] .dv2-meta {{
   font-family: 'Barlow', sans-serif;
+}}
+
+/* ── Equal-height cards: stretch bordered containers within each row ─── */
+[data-testid="stHorizontalBlock"] {{
+  align-items: stretch !important;
+}}
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{
+  display: flex;
+  flex-direction: column;
+}}
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] {{
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}}
+[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] > [data-testid="stVerticalBlock"] > [data-testid="stVerticalBlockBorderWrapper"] {{
+  flex: 1;
+  height: 100%;
+  box-sizing: border-box;
+}}
+
+/* ── Consistent section gap ─────────────────────────────────────────── */
+[data-testid="stVerticalBlockBorderWrapper"] {{
+  margin-bottom: 0 !important;
 }}
 </style>
 """

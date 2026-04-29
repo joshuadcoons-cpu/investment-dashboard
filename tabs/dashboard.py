@@ -705,7 +705,7 @@ def render():
                 per_acct.append((acct["label"], d))
         acct_html = ""
         for lbl, d in per_acct:
-            acct_color = "var(--dv2-green-2)" if d >= 0 else "var(--dv2-red-2)"
+            acct_color = "#34d399" if d >= 0 else "#f87171"
             sign_d = "+" if d >= 0 else "−"
             acct_html += (
                 f'<span class="sep">·</span>'
@@ -713,7 +713,7 @@ def render():
                 f'<b style="color:{acct_color}">{sign_d}{_fmt_dollar(abs(d))}</b></span>'
             )
         st.markdown(f"""
-        <div class="dv2-move {cls}">
+        <div class="dv2 dv2-move {cls}">
           <span class="ttl">Today's Move</span>
           <span class="big">{arrow} {sign}{_fmt_dollar(abs(daily_gain))}
             <span class="pct">({sign}{abs(daily_pct):.2f}%)</span>
@@ -845,12 +845,13 @@ def render():
             '</div>'
         )
 
-        st.html(
-            '<div class="dv2 dv2-card">'
-            '<div class="dv2-h">Sector Allocation <span class="meta">vs target</span></div>'
-            f'{sec_html}{legend_html}'
-            '</div>'
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                '<div class="dv2-h">Sector Allocation <span class="meta">vs target</span></div>'
+                f'{sec_html}{legend_html}'
+                '</div>'
+            )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 6. ROW 2 — Cash Flow Waterfall + Debt Payoff
@@ -969,12 +970,13 @@ def render():
                 '</div></div>'
             )
 
-        st.html(
-            '<div class="dv2 dv2-card">'
-            f'<div class="dv2-h">Debt Payoff Timeline <span class="meta">{_fmt_k(total_liab)} total</span></div>'
-            f'{debt_html}'
-            '</div>'
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                f'<div class="dv2-h">Debt Payoff Timeline <span class="meta">{_fmt_k(total_liab)} total</span></div>'
+                f'{debt_html}'
+                '</div>'
+            )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 7. ROW 2 — Investment Accounts + Top Holdings
@@ -1021,12 +1023,13 @@ def render():
             )
         acct_html += "</div>"
 
-        st.html(
-            '<div class="dv2 dv2-card">'
-            f'<div class="dv2-h">Investment Accounts <span class="meta">{_fmt_k(total_investments)} · {len(acct_items)} accounts</span></div>'
-            f'{acct_html}'
-            '</div>'
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                f'<div class="dv2-h">Investment Accounts <span class="meta">{_fmt_k(total_investments)} · {len(acct_items)} accounts</span></div>'
+                f'{acct_html}'
+                '</div>'
+            )
 
     # ── Top Holdings ──────────────────────────────────────────────────────
     with r7b:
@@ -1075,21 +1078,22 @@ def render():
                 '</tr>'
             )
 
-        st.html(
-            '<div class="dv2 dv2-card">'
-            '<div class="dv2-h">Top Holdings <span class="meta">By market value</span></div>'
-            '<table class="dv2-holdings">'
-            '<thead><tr>'
-            '<th>Position</th>'
-            '<th class="r">Shares</th>'
-            '<th class="r">Price</th>'
-            '<th class="r">Day</th>'
-            '<th class="r">Value</th>'
-            '</tr></thead>'
-            f'<tbody>{rows_html}</tbody>'
-            '</table>'
-            '</div>'
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                '<div class="dv2-h">Top Holdings <span class="meta">By market value</span></div>'
+                '<table class="dv2-holdings">'
+                '<thead><tr>'
+                '<th>Position</th>'
+                '<th class="r">Shares</th>'
+                '<th class="r">Price</th>'
+                '<th class="r">Day</th>'
+                '<th class="r">Value</th>'
+                '</tr></thead>'
+                f'<tbody>{rows_html}</tbody>'
+                '</table>'
+                '</div>'
+            )
 
     # ═══════════════════════════════════════════════════════════════════════
     # 8. MILESTONE TRACKER
@@ -1115,10 +1119,11 @@ def render():
                 '</div>'
             )
 
-        st.html(
-            '<div class="dv2 dv2-card">'
-            '<div class="dv2-h">Milestone Tracker <span class="meta">Path to financial independence</span></div>'
-            f'{ms_html}'
-            '</div>'
-        )
+        with st.container(border=True):
+            st.html(
+                '<div class="dv2">'
+                '<div class="dv2-h">Milestone Tracker <span class="meta">Path to financial independence</span></div>'
+                f'{ms_html}'
+                '</div>'
+            )
 
