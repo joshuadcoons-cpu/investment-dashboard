@@ -568,11 +568,27 @@ def render():
 
             # ── Edit holdings (interactive spreadsheet) ─────────────────────
             with st.expander("✏️ Edit Holdings", expanded=False):
-                st.caption(
+                aid = acct.get("_id", acct["label"])
+
+                # Cash sits OUTSIDE the holdings table — every account has it
+                cash_col, info_col = st.columns([1, 2])
+                new_cash = cash_col.number_input(
+                    "💵 Cash in Account ($)",
+                    min_value=0.0,
+                    value=float(acct.get("cash_usd", 0) or 0),
+                    step=100.0, format="%.2f",
+                    key=f"cash_{aid}",
+                    help="Uninvested cash held in this account (separate from any "
+                         "holdings below). Counted toward account market value.",
+                )
+                if abs(new_cash - float(acct.get("cash_usd", 0) or 0)) > 0.005:
+                    acct["cash_usd"] = round(new_cash, 2)
+                    st.rerun()
+                info_col.caption(
                     "Edit ticker, shares, avg cost, or sector inline. "
-                    "Use the **+** at the bottom of the table to add a new row, "
-                    "or click a row checkbox + the trash icon to delete. "
-                    "Changes save automatically — refresh prices in the sidebar after."
+                    "**To delete:** check the 🗑️ box for that row — the change "
+                    "applies on the next save. **To add:** type into the empty "
+                    "row at the bottom of the table."
                 )
 
                 # Holdings with tickers (priced positions only — fund-only rows
@@ -581,6 +597,7 @@ def render():
 
                 edit_rows = [
                     {
+                        "🗑️":       False,
                         "Ticker":   h.get("ticker") or "",
                         "Shares":   float(h.get("shares") or 0),
                         "Avg Cost": float(h.get("avg_cost") or 0),
@@ -591,10 +608,10 @@ def render():
                 edit_df = (
                     pd.DataFrame(edit_rows)
                     if edit_rows
-                    else pd.DataFrame(columns=["Ticker", "Shares", "Avg Cost", "Sector"])
+                    else pd.DataFrame(columns=["🗑️", "Ticker", "Shares", "Avg Cost", "Sector"])
                 )
 
-                editor_key = f"hed_{acct.get('_id', acct['label'])}"
+                editor_key = f"hed_{aid}"
                 edited = st.data_editor(
                     edit_df,
                     num_rows="dynamic",
@@ -602,6 +619,10 @@ def render():
                     hide_index=True,
                     key=editor_key,
                     column_config={
+                        "🗑️": st.column_config.CheckboxColumn(
+                            "🗑️", default=False, width="small",
+                            help="Check to delete this row on next save",
+                        ),
                         "Ticker": st.column_config.TextColumn(
                             "Ticker", required=False, max_chars=12, width="small",
                             help="Stock/ETF/crypto symbol (e.g. VOO, BTC, MSFT)",
@@ -634,6 +655,9 @@ def render():
                 ]
                 rebuilt = []
                 for _, row in edited.iterrows():
+                    # Skip rows the user marked for deletion via the 🗑️ box
+                    if row.get("🗑️") is True:
+                        continue
                     raw_t = row.get("Ticker")
                     ticker = str(raw_t).strip().upper() if pd.notna(raw_t) and str(raw_t).strip() else ""
                     if not ticker:
@@ -665,26 +689,32 @@ def render():
                     ]
 
                 if _normalize(rebuilt) != _normalize(ticker_holdings):
-                    # Detect newly-added tickers (so we can refresh prices for them)
+                    # Detect newly-added & removed tickers (for nicer toast messages
+                    # and to know whether to refresh prices)
                     old_ticker_set = {h.get("ticker") for h in ticker_holdings}
                     new_ticker_set = {h["ticker"] for h in rebuilt}
-                    added_tickers = new_ticker_set - old_ticker_set
+                    added_tickers   = new_ticker_set - old_ticker_set
+                    removed_tickers = old_ticker_set - new_ticker_set
 
                     acct["holdings"] = preserved_funds + rebuilt
 
                     # CRITICAL: clear the data_editor's session state so its
-                    # accumulated diff (added_rows / edited_rows / deleted_rows)
-                    # doesn't get re-applied on top of the freshly-synced source
-                    # — that's what causes the feedback loop.
+                    # accumulated diff (added_rows / edited_rows / deleted_rows /
+                    # checkbox toggles) doesn't get re-applied on top of the
+                    # freshly-synced source — that's what causes the feedback loop.
                     if editor_key in st.session_state:
                         del st.session_state[editor_key]
 
                     if added_tickers:
-                        # New ticker(s) added — clear price cache so prices fetch
-                        st.cache_data.clear()
+                        st.cache_data.clear()  # fetch prices for the new ticker(s)
                         st.toast(
                             f"✓ Added {', '.join(sorted(added_tickers))} to {acct['label']} — fetching prices…",
                             icon="💾",
+                        )
+                    elif removed_tickers:
+                        st.toast(
+                            f"✓ Removed {', '.join(sorted(removed_tickers))} from {acct['label']}",
+                            icon="🗑️",
                         )
                     else:
                         st.toast(f"✓ {acct['label']} holdings saved", icon="💾")
