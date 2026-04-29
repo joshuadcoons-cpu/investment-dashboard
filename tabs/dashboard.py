@@ -1108,14 +1108,40 @@ def render():
             done = net_worth >= target
             future = m["age"] > a["age"] and not done
             cls = "done" if done else ("future" if future else "")
+
+            # Inline styles — guaranteed to work inside st.html() iframe context
+            if done:
+                fill_bg  = "linear-gradient(90deg,#10b981,#34d399,#06b6d4)"
+                fill_glow = "0 0 10px rgba(16,185,129,0.6)"
+                pct_color = "#34d399"
+            elif future:
+                fill_bg  = "rgba(255,255,255,0.15)"
+                fill_glow = "none"
+                pct_color = "#64748b"
+            else:
+                fill_bg  = "linear-gradient(90deg,#3b82f6,#60a5fa,#06b6d4)"
+                fill_glow = "0 0 10px rgba(59,130,246,0.6)"
+                pct_color = "#60a5fa"
+
             ms_html += (
-                f'<div class="dv2-ms {cls}">'
-                '<div class="top">'
-                f'<span><span class="ttl">Age {m["age"]} · {_fmt_k(target)}</span>'
-                f'<span class="ev">{_html.escape(m["event"])}</span></span>'
-                f'<span class="pc">{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>'
+                f'<div class="dv2-ms {cls}" style="margin-bottom:16px">'
+                '<div class="top" style="display:flex;justify-content:space-between;'
+                'font-size:0.78rem;margin-bottom:8px">'
+                f'<span>'
+                f'<span class="ttl" style="font-weight:600">'
+                f'Age {m["age"]} · {_fmt_k(target)}</span>'
+                f'<span class="ev" style="color:#64748b;font-size:0.72rem;margin-left:8px">'
+                f'{_html.escape(m["event"])}</span>'
+                f'</span>'
+                f'<span style="font-family:\'JetBrains Mono\',monospace;font-size:0.7rem;'
+                f'font-weight:600;color:{pct_color}">'
+                f'{pct:.0f}% · {_fmt_k(net_worth)} of {_fmt_k(target)}</span>'
                 '</div>'
-                f'<div class="mtrack"><div class="mfill" style="width:{pct}%"></div></div>'
+                '<div style="height:10px;background:rgba(255,255,255,0.12);'
+                'border-radius:9999px;overflow:hidden">'
+                f'<div style="height:100%;width:{pct:.1f}%;background:{fill_bg};'
+                f'border-radius:9999px;box-shadow:{fill_glow}"></div>'
+                '</div>'
                 '</div>'
             )
 
